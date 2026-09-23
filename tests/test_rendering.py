@@ -197,3 +197,57 @@ class TestTranslateWired:
         """无翻译映射的信号，原值透传"""
         r = render_value("battery_level", 55, {"value": 55}, {})
         assert r == 55
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# 9. 信号新鲜度（_signal_age）
+# ───────────────────────────────────────────────────────────────────────────
+class TestSignalAge:
+    """★ 2026-09-23 新增：把上报时间转成可读年龄。
+
+    用于 extra_state_attributes，让用户判断数据是否新鲜，
+    而不改变实体状态（避免"实体突然变 unknown"）。
+    """
+
+    @staticmethod
+    def _age(ts):
+        # sensor.py 需要 HA 依赖，这里复制一份纯逻辑做单测
+        from datetime import datetime
+        if not ts:
+            return None
+        t = str(ts).strip()
+        if t in ("", "0"):
+            return None
+        try:
+            dt = datetime.strptime(t[:19], "%Y-%m-%d %H:%M:%S")
+        except (ValueError, TypeError):
+            return None
+        secs = int((datetime.now() - dt).total_seconds())
+        if secs < 0:
+            return "刚刚"
+        if secs < 60:
+            return f"{secs} 秒前"
+        if secs < 3600:
+            return f"{secs // 60} 分钟前"
+        if secs < 86400:
+            return f"{secs // 3600} 小时前"
+        days = secs // 86400
+        if days < 30:
+            return f"{days} 天前"
+        if days < 365:
+            return f"{days // 30} 个月前"
+        return f"{days // 365} 年前"
+
+    def test_invalid_returns_none(self):
+        assert self._age(None) is None
+        assert self._age("") is None
+        assert self._age("0") is None
+        assert self._age("not-a-date") is None
+
+    def test_old_date(self):
+        assert self._age("2024-07-22 15:57:18") == "2 年前"
+
+    def test_recent(self):
+        from datetime import datetime, timedelta
+        t = (datetime.now() - timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M:%S")
+        assert self._age(t) == "30 分钟前"
