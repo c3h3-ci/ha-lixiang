@@ -56,7 +56,6 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
         self._low_freq_cache: dict[str, dict] = {}
         # 主 route（当前唯一支持的车；多车时扩展为遍历）
         self._route_id: str = ""
-        self._registry = None
 
     # ★ 信号分级（借自 huawei-auto-cloud 的节流策略 + 实测 ts 分析）
     #
@@ -109,17 +108,6 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
             except Exception:  # noqa: BLE001
                 self._route_id = "default"
         return self._route_id
-
-    @property
-    def registry(self):
-        """车辆路由注册表（多车时遍历）。"""
-        if self._registry is None:
-            try:
-                from .routing import RouteRegistry
-                self._registry = RouteRegistry.from_entry(self._entry)
-            except Exception:  # noqa: BLE001
-                self._registry = None
-        return self._registry
 
     # ★ 在线探测信号（借自 huawei-auto-cloud 的在线驱动轮询策略）
     #   先只查 2 个连接状态字段，离线时跳过大轮询 → 省流量、降低风控风险
