@@ -155,11 +155,10 @@ class LiCarClient:
         静态接口的 X-CHJ-TOKEN 过期(240225)不影响实时信号通道 — 各自容错。
         """
         data: dict = {}
-        try:
-            data["vehicles"] = await self.get_vehicles()
-        except LiCarApiError as err:
-            _LOGGER.warning("车辆列表读取失败(静态token可能过期, 不影响实时信号): %s", err)
-            data["vehicles"] = []
+        # ★ 车辆列表改用 saos-vehicle-api（2026-09-23 修复）
+        #   旧的 /aisp-account-api/v1-0/vehicles 依赖已过期的 X-CHJ-TOKEN
+        #   → 每次轮询都返回 240225，产生固定噪声日志。已移除该调用。
+        data["vehicles"] = []
         try:
             basics = await self.get_vehicle_basics()
         except LiCarApiError as err:
