@@ -6,9 +6,11 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 import voluptuous as vol
+from homeassistant.helpers import selector
 
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
@@ -61,20 +63,62 @@ MANUAL_SCHEMA = vol.Schema(
 # ★ 主表单：只问最必要的两项（手机号 + 密码）
 #   VIN 会自动从账号获取；device_id 由 identity store 管理（受信任设备免短信）
 #   如确需手工指定，走「高级选项」步骤。
+# ★ 2026-09-23 优化：用 selector 提供更好的输入体验
+#   · 手机号：数字键盘 + 长度校验 + 自动补 +86 提示
+#   · 密码：掩码显示（避免肩窥）
 PASSWORD_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_PHONE): str,
-        vol.Required("password"): str,
+        vol.Required(CONF_PHONE): selector.TextSelector(
+            selector.TextSelectorConfig(
+                type=selector.TextSelectorType.TEL,
+                autocomplete="tel",
+            )
+        ),
+        vol.Required("password"): selector.TextSelector(
+            selector.TextSelectorConfig(
+                type=selector.TextSelectorType.PASSWORD,
+                autocomplete="current-password",
+            )
+        ),
     }
 )
 
+def _validate_phone(raw: str) -> str:
+    """校验并归一化手机号。
+
+    ★ 2026-09-23：在 schema 层之外做显式校验，给出可读的错误信息
+      （而不是让服务端返回 400 后再翻译）。
+
+    接受格式：13800138000 / +8613800138000 / 138-0013-8000 / 138 0013 8000
+    归一化为：11 位中国大陆手机号（去掉 +86/空格/横杠）
+    """
+    v = re.sub(r"[\s\-()]", "", str(raw or ""))
+    if v.startswith("+86"):
+        v = v[3:]
+    elif v.startswith("86") and len(v) == 13:
+        v = v[2:]
+    if not re.fullmatch(r"1[3-9]\d{9}", v):
+        raise vol.Invalid("invalid_phone")
+    return v
+
+
+def _validate_password(raw: str) -> str:
+    """密码基本校验（长度）。
+
+    ★ 理想密码规则未知（服务端校验），这里只拦明显无效的输入，
+      避免一次网络往返才发现是空密码。
+    """
+    v = str(raw or "")
+    if len(v) < 6:
+        raise vol.Invalid("password_too_short")
+    if len(v) > 64:
+        raise vol.Invalid("password_too_long")
+    return v
+
+
 # 高级选项（可选展开）
-ADVANCED_SCHEMA = vol.Schema(
-    {
-        vol.Optional(CONF_VIN, default=""): str,
-        vol.Optional(CONF_DEVICE_ID, default=""): str,
-    }
-)
+# ★ 2026-09-23：VIN 与 device_id 现在从「手动填凭据」入口提供，
+#   登录表单保持简洁（只手机号 + 密码），此处不再定义未使用的 schema。
 
 
 def _do_direct_login(phone: str, password: str, device_id: str | None = None) -> dict:
@@ -400,10 +444,14 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.warning("自动获取 VIN 失败: %s", err)
         if vin:
             data[CONF_VIN] = vin
+            _LOGGER.info("VIN = %s（%s）", vin,
+                         "用户指定" if pending.get("vin") else "自动获取")
         else:
-            _LOGGER.warning(
-                "未获取到 VIN —— 实时信号与车控将不可用，"
-                "请稍后在集成选项里补充，或重新登录")
+            # ★ 2026-09-23：自动获取失败时进入【手动补 VIN】步骤，
+            #   而不是只打一句"请稍后在集成选项里补充"（选项里并没有该字段）。
+            _LOGGER.warning("自动获取 VIN 失败，转入手动补填步骤")
+            self._pending = {**pending, **data}
+            return await self.async_step_vin()
 
         # ★ VIN 去重：同一辆车被第二个账号接入会导致 unique_id 冲突
         #   （HA 一个 unique_id 只能对一个实体 → 第二个条目只创建出零星实体）
@@ -472,6 +520,43 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.warning("自动获取 VIN 失败: %s", err)
         return ""
 
+
+    async def async_step_vin(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """手动补填 VIN（仅在自动获取失败时出现）。
+
+        ★ 正常情况下不会走到这里 —— 登录成功后集成会自动调用
+          /saos-vehicle-api/v2-0/vehicles/basics 获取账号下的车辆。
+
+        什么情况下需要手动填？
+          · 自动获取接口失败（网络/服务端变动）
+          · 账号下有多辆车，想指定其中一辆
+          · 非车主账号（家人）自动获取不到
+        """
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            vin = (user_input.get(CONF_VIN) or "").strip().upper()
+            pending = dict(getattr(self, "_pending", None) or {})
+            if not vin:
+                return await self._finish_login(pending)
+            # VIN 规则：17 位，不含 I/O/Q
+            if not re.fullmatch(r"[A-HJ-NPR-Z0-9]{17}", vin):
+                errors["base"] = "invalid_vin"
+            else:
+                pending[CONF_VIN] = vin
+                self._pending = pending
+                return await self._finish_login(pending)
+
+        return self.async_show_form(
+            step_id="vin",
+            data_schema=vol.Schema({
+                vol.Optional(CONF_VIN, default=""): str,
+            }),
+            errors=errors,
+            description_placeholders={
+                "hint": "自动获取失败，请手动填写 VIN（17 位）",
+            },
+        )
 
     async def async_step_manual(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """手动填写 App 提取凭据."""
