@@ -133,7 +133,10 @@ VSS_PATHS = {
     "door_back_left": "Vehicle.Body.DoorSwitchStatus.BackLeftDoor",
     "door_back_right": "Vehicle.Body.DoorSwitchStatus.BackRightDoor",
     "door_trunk": "Vehicle.Body.DoorSwitchStatus.TrunkDoor",
-    "charge_port_lid": "Vehicle.Body.DoorSwitchStatus.ChrgPorLidSts",
+    # ★ 2026-09-23：ChrgPorLidSts（旧版）在 L6 上恒为 1（无效信号），
+    #   改用 ChrgPorLidStsV2（实测 0 = 关闭）
+    "charge_port_lid": "Vehicle.Body.DoorSwitchStatus.ChrgPorLidStsV2",
+    "charge_port_lid_old": "Vehicle.Body.DoorSwitchStatus.ChrgPorLidSts",
     "tank_lock": "Vehicle.Body.DoorSwitchStatus.TankLockDrvSts",
     # ===== 车窗 =====
     "window_main": "Vehicle.Body.WindowPosition.MainWindow",
@@ -147,6 +150,11 @@ VSS_PATHS = {
     "ac_wind_mode": "Vehicle.Cabin.AC.WindMode",
     "ac_defrost": "Vehicle.Cabin.AC.DefrostModeStatus",
     "ac_fan_speed": "Vehicle.Cabin.AC.ExSpeedStatus",
+    # ★ 空调真实开关信号（2026-09-23 从 App 源码 LiMeshPathHelper 还原）
+    #   LXVehicleInfoKeyAC → Vehicle.Cabin.AC.FOffStatus
+    #   App 逻辑：FOffStatus==1 → setACSwitch(true)
+    #   实测：空调开着=1，关着=0；时间戳随操作实时更新
+    "ac_on": "Vehicle.Cabin.AC.FOffStatus",
     # ===== 座椅加热/通风 =====
     "seat_fl_heat": "Vehicle.Cabin.Seat.FLSeatHeatState",
     "seat_fl_vent": "Vehicle.Cabin.Seat.FLSeatVentilationState",

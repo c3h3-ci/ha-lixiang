@@ -170,7 +170,16 @@ class LiCarBinarySensor(CoordinatorEntity, BinarySensorEntity):
         if kind == "lock":
             return n != 0                     # 0=已落锁 → on=未落锁
         if kind == "door":
-            return n != 0                     # 0=关闭 → on=打开
+            # ★ 2026-09-23 修复：不同门信号的语义不同
+            #   App 源码（LXLiMeshStateDelegate.getTrunkState）还原：
+            #     · 优先用 DoorLockStatus.TrunkDoor：0=关闭，其他=打开
+            #     · 无 lock 时用 DoorSwitchStatus.TrunkDoor：0/2/3=关闭，1=打开
+            #   实测：L6 的后备箱 DoorSwitchStatus.TrunkDoor 恒为 2
+            #         （旧代码把 2 判成"打开"→ 一直显示 on）
+            key = self.entity_description.key
+            if key in ("door_trunk",):
+                return n == 1                 # 0/2/3=关闭，1=打开
+            return n != 0                     # 其他车门：0=关闭
         if kind == "plug":
             return n != 0                     # 0=未插 → on=已连接
         if kind == "conn":

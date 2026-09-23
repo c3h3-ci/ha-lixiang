@@ -625,12 +625,17 @@ class LiApiClient:
                 request_id=request_id,
                 result_code=result.get("resultCode"), push_state=ps,
             )
-        raise LiCommandError(
-            f"命令结果超时未终态 ({command_key}): pushState={ps} "
-            f"msg={result.get('resultMsg')}",
-            request_id=request_id,
-            result_code=result.get("resultCode"), push_state=ps,
-        )
+        # ★ 超时未终态（2026-09-23 修复）
+        #   pushState=1（执行中）时服务端只是没及时置终态，但命令【可能已生效】。
+        #   实测：开空调命令超时后，FOffStatus 已变为 1（车确实开了）。
+        #   这种情况【不应抛错】——否则 HA 会显示"失败"而实际成功，
+        #   用户会重复点击。
+        #   改为：记 warning + 返回结果，由实体状态（下一次轮询）反映真实情况。
+        _LOGGER.warning(
+            "车控命令未在超时内进入终态 %s %s pushState=%s msg=%s "
+            "（命令可能已生效，状态以下次轮询为准）",
+            command_key, command_data, ps, result.get("resultMsg"))
+        return result
 
     def _poll_result(self, request_id: str, timeout: float, interval: float) -> dict:
         """轮询 cmd-result 直到 pushState 进入终态 (5 成功 / 7 失败) 或超时."""

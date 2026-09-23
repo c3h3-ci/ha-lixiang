@@ -58,7 +58,8 @@ AC_TYPE_FRONT = "frtACSw"          # 前排空调开关（实测可用）
 AC_TYPE_AUTO = "frtACAUTOSw"       # 前排自动空调（实测亦可）
 
 # 状态 VSS key
-KEY_FAN_SPEED = "ac_fan_speed"
+KEY_AC_ON = "ac_on"                # ★ 空调真实开关信号（Vehicle.Cabin.AC.FOffStatus）
+KEY_FAN_SPEED = "ac_fan_speed"     # 风速（仅用于展示，不用于判定开关）
 KEY_SET_TEMP = "ac_set_temp"
 KEY_INSIDE_TEMP = "inside_temp"
 KEY_DEFROST = "ac_defrost"
@@ -120,14 +121,29 @@ class LiCarClimate(CoordinatorEntity, ClimateEntity):
         return None if not sig else sig.get("value")
 
     def _ac_running(self) -> bool | None:
-        """由风速信号推断空调是否运行 (风速 > 0 视为开启)."""
+        """空调是否运行。
+
+        ★ 2026-09-23 修复：改用 Vehicle.Cabin.AC.FOffStatus（App 官方信号）
+          App 源码（LiMeshPathHelper）里 LXVehicleInfoKeyAC → FOffStatus，
+          XAcDataHandle 逻辑：FOffStatus==1 → setACSwitch(true)。
+          实测：开空调=1，关=0，且时间戳随操作实时更新。
+
+        旧实现用 ExSpeedStatus（风速），但远程开空调时该信号不上报（恒为 0），
+        导致"实际已开启但 HA 显示关闭"。
+        """
+        val = self._sig(KEY_AC_ON)
+        if val is not None:
+            try:
+                return int(float(val)) == 1
+            except (TypeError, ValueError):
+                return str(val).strip().upper() not in ("0", "OFF", "FALSE")
+        # 回退：用风速推断（旧逻辑）
         val = self._sig(KEY_FAN_SPEED)
         if val is None:
             return None
         try:
             return int(float(val)) > 0
         except (TypeError, ValueError):
-            # 非数值（如 "ON"/"OFF"）时按字符串判读
             return str(val).strip().upper() not in ("0", "OFF", "FALSE", "CLOSED", "NONE")
 
     @property
