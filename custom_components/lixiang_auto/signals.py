@@ -1180,6 +1180,37 @@ SIGNALS: dict[str, SignalSpec] = {
 # ═══════════════════════════════════════════════════════════════════════════
 #  查询辅助
 # ═══════════════════════════════════════════════════════════════════════════
+def to_sensor_description(spec: SignalSpec):
+    """把 SignalSpec 转成 HA 的 SensorEntityDescription。
+
+    ★ 需要 homeassistant 包 → 仅在 HA 运行时调用。
+    """
+    from homeassistant.components.sensor import SensorEntityDescription
+    from homeassistant.const import EntityCategory
+
+    from .sensor import _DCLASS, _SCLASS, _UNITS
+
+    kw: dict = {"key": spec.key, "name": spec.name}
+    if spec.icon:
+        kw["icon"] = spec.icon
+    if spec.device_class and spec.device_class in _DCLASS:
+        kw["device_class"] = _DCLASS[spec.device_class]
+    if spec.unit and spec.unit in _UNITS:
+        kw["native_unit_of_measurement"] = _UNITS[spec.unit]
+    if spec.state_class and spec.state_class in _SCLASS:
+        kw["state_class"] = _SCLASS[spec.state_class]
+    if spec.diagnostic:
+        kw["entity_category"] = EntityCategory.DIAGNOSTIC
+        kw["entity_registry_enabled_default"] = False
+    return SensorEntityDescription(**kw)
+
+
+def to_sensor_descriptions():
+    """批量转换（已按 platforms 过滤）。"""
+    return [to_sensor_description(s) for s in specs_for("sensor")]
+
+
+
 def specs_for(platform: str, features: dict | None = None) -> list[SignalSpec]:
     """按平台 + 车型功能过滤信号。
 
@@ -1231,5 +1262,6 @@ VSS_PATHS_COMPAT: dict[str, str] = {k: s.path for k, s in SIGNALS.items()}
 __all__ = [
     "Freq", "Semantics", "SignalSpec", "SIGNALS",
     "specs_for", "by_freq", "paths_for", "path_of", "value_map_of",
+    "to_sensor_description", "to_sensor_descriptions",
     "VSS_PATHS_COMPAT",
 ]
