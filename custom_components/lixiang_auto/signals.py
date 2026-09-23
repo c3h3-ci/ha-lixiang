@@ -1191,6 +1191,16 @@ SIGNALS: dict[str, SignalSpec] = {
         freq=Freq.HIGH,
         platforms=frozenset(),  # ★ L6 实测无数据（SkylightWindow 返回 None）
     ),
+    # ★ 虚拟信号（非 VSS）—— 值来自 coordinator.data 的其他字段
+    # ⚠️ gen_signals.py 从 VSS_PATHS 生成，不会包含它们 —— 需手工维护
+    "online_status": SignalSpec(
+        key="online_status",
+        path="",                      # 无 VSS 路径（虚拟信号）
+        name="在线状态",
+        freq=Freq.HIGH,
+        icon="mdi:car-connected",
+        category="状态",
+    ),
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1272,18 +1282,25 @@ def specs_for(platform: str, features: dict | None = None) -> list[SignalSpec]:
 
 
 def by_freq(freq: Freq) -> list[SignalSpec]:
-    """按频率档位筛选（coordinator 用）。"""
-    return [s for s in SIGNALS.values() if s.freq == freq]
+    """按频率档位筛选（coordinator 用）。
+
+    ★ 2026-09-24：排除虚拟信号（path 为空）—— 它们不走 VSS 轮询。
+    """
+    return [s for s in SIGNALS.values() if s.freq == freq and s.path]
 
 
 def paths_for(freq: Freq | None = None) -> list[str]:
     """返回 VSS 路径列表（coordinator 轮询用）。
 
     freq=None 表示全部。
+
+    ★ 2026-09-24：排除【虚拟信号】（path 为空）——
+      它们的值来自 coordinator.data 的其他字段，不通过 VSS 轮询。
     """
-    if freq is None:
-        return [s.path for s in SIGNALS.values()]
-    return [s.path for s in SIGNALS.values() if s.freq == freq]
+    items = [s for s in SIGNALS.values() if s.path]
+    if freq is not None:
+        items = [s for s in items if s.freq == freq]
+    return [s.path for s in items]
 
 
 def path_of(key: str) -> str:
@@ -1299,7 +1316,9 @@ def value_map_of(key: str) -> dict | None:
 
 
 # 兼容：把 SIGNALS 转成旧的 {key: path} 形式
-VSS_PATHS_COMPAT: dict[str, str] = {k: s.path for k, s in SIGNALS.items()}
+VSS_PATHS_COMPAT: dict[str, str] = {
+    k: s.path for k, s in SIGNALS.items() if s.path
+}
 
 
 __all__ = [
