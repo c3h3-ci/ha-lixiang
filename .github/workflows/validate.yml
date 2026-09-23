@@ -1,0 +1,118 @@
+name: Validate
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  ha-lixiang CI —— 提交/PR 时自动校验
+#
+#  检查项：
+#   1. hassfest      —— HA 官方集成结构校验（manifest/翻译/依赖）
+#   2. HACS validate —— HACS 集成规范校验
+#   3. Python 语法   —— py_compile 全量
+#   4. 敏感信息扫描  —— 防止个人数据误提交
+#   5. JSON 有效性   —— manifest/strings/translations
+# ═══════════════════════════════════════════════════════════════════════════
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  # ── HA 官方结构校验 ────────────────────────────────────────────────────
+  hassfest:
+    name: hassfest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  # ── HACS 规范校验 ──────────────────────────────────────────────────────
+  hacs:
+    name: HACS validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hacs/action@main
+        with:
+          category: integration
+
+  # ── 代码质量（语法 + JSON + 敏感信息）──────────────────────────────────
+  lint:
+    name: lint & security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python 语法检查
+        run: |
+          set -e
+          fail=0
+          for f in custom_components/lixiang_auto/*.py; do
+            if ! python -m py_compile "$f"; then
+              echo "::error file=$f::语法错误"
+              fail=1
+            fi
+          done
+          exit $fail
+
+      - name: JSON 有效性
+        run: |
+          set -e
+          for f in $(find custom_components -name '*.json'); do
+            python -c "import json,sys;json.load(open('$f',encoding='utf-8'))" \
+              || { echo "::error file=$f::JSON 无效"; exit 1; }
+          done
+
+      - name: 翻译文件同步检查
+        run: |
+          if ! diff -q custom_components/lixiang_auto/strings.json \
+                       custom_components/lixiang_auto/translations/zh-Hans.json; then
+            echo "::warning::strings.json 与 translations/zh-Hans.json 不同步"
+            echo "建议: cp strings.json translations/zh-Hans.json"
+          fi
+
+      - name: 敏感信息扫描
+        run: |
+          set -e
+          fail=0
+          # 真实个人数据不应出现在公开仓库
+          # 注意：hac_key / key_id / xdev / app_token 是 API 签名必需，属允许项
+          declare -A PATTERNS=(
+            ["手机号"]="13736776363|19285871820"
+            ["密码"]="cdd633723"
+            ["安全码"]="180909"
+            ["VIN"]="HLX32B14XR1361015"
+            ["设备ID"]="dfb44c4fd7d64d1e924d29e6340b8694"
+            ["内网IP"]="192\.168\.3\.206"
+            ["内网域名"]="homediy"
+          )
+          # 只扫描集成代码与 README（不含 CI 配置自身）
+          for name in "${!PATTERNS[@]}"; do
+            if hits=$(grep -rlE "${PATTERNS[$name]}" \
+                        custom_components/ README.md 2>/dev/null); then
+              echo "::error::发现 $name 泄露"
+              echo "$hits"
+              fail=1
+            fi
+          done
+          exit $fail
+
+      - name: manifest 必填字段
+        run: |
+          python - <<'PY'
+          import json, sys
+          m = json.load(open("custom_components/lixiang_auto/manifest.json", encoding="utf-8"))
+          required = ["domain", "name", "version", "documentation", "codeowners", "config_flow"]
+          missing = [k for k in required if k not in m]
+          if missing:
+              print(f"::error::manifest.json 缺少字段: {missing}")
+              sys.exit(1)
+          if m["domain"] != "lixiang_auto":
+              print("::error::domain 必须为 lixiang_auto")
+              sys.exit(1)
+          print(f"✓ manifest 完整 (version={m['version']})")
+          PY

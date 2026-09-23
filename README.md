@@ -170,3 +170,46 @@ A: 车辆可能离线（集成会自动跳过轮询以省流量）。
 MIT License
 
 第三方商标（理想汽车、Li Auto 等）归其各自权利人所有。
+# 测试
+
+---
+
+## 开发
+
+### 本地检查
+
+```bash
+# 安装 pre-commit hook（提交前自动检查语法/JSON/敏感信息）
+cp .github/pre-commit.sh .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+```
+
+### 版本发布
+
+```bash
+./bump.sh patch     # 1.0.0 → 1.0.1（修 bug）
+./bump.sh minor     # 1.0.0 → 1.1.0（加功能）
+./bump.sh major     # 1.0.0 → 2.0.0（不兼容变更）
+git tag v1.0.1 && git push --tags
+```
+
+### CI
+
+推送到 `main` 或提 PR 时自动运行：
+
+| 检查 | 说明 |
+|---|---|
+| **hassfest** | HA 官方集成结构校验 |
+| **HACS validate** | HACS 规范校验 |
+| **lint** | Python 语法 + JSON + 敏感信息 + manifest 字段 |
+
+### 双副本同步
+
+集成在测试机运行时，代码与仓库是两份。使用同步脚本：
+
+```bash
+./li-sync.sh status            # 查看差异
+./li-sync.sh push-repo         # 测试机 → 仓库
+./li-sync.sh commit "说明"     # 同步 + 提交 + 推送
+```
+
+> 注：HA 无法从软链接加载 custom_component，所以必须双副本。
