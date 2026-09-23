@@ -53,9 +53,9 @@ BINARY_DESCRIPTIONS: tuple[tuple[BinarySensorEntityDescription, str], ...] = (
     (BinarySensorEntityDescription(key="door_back_right", name="右后车门",
         device_class=BinarySensorDeviceClass.DOOR, icon="mdi:car-door"), "door"),
     (BinarySensorEntityDescription(key="door_trunk", name="后备箱门",
-        device_class=BinarySensorDeviceClass.DOOR, icon="mdi:car-door"), "door"),
+        device_class=BinarySensorDeviceClass.DOOR, icon="mdi:car-door"), "trunk"),
     (BinarySensorEntityDescription(key="charge_port_lid", name="充电口盖",
-        icon="mdi:ev-plug-type2"), "door"),
+        icon="mdi:ev-plug-type2"), "charge_lid"),
     (BinarySensorEntityDescription(key="tank_lock", name="油箱盖",
         icon="mdi:gas-station"), "door"),
     # ---- 充电枪（on = 已连接）----
@@ -177,17 +177,50 @@ class LiCarBinarySensor(CoordinatorEntity, BinarySensorEntity):
             #     boolean open = (v == 1);        // 只有 1 → true
             #     model.setXxxDoorState(open);
             #
-            #   四个车门（MainDoor/CopilotDoor/BackLeftDoor/BackRightDoor）
-            #   和尾门（TrunkDoor）都是同一模式。
-            #
             #   尾门的额外证据：
             #     XHttpOpenTrunkControl  → 等 v == 1 视为开成功
             #     XHttpCloseTrunkControl → 等 v == 2 视为关成功
             #
             #   ⚠️ 旧实现用 `n != 0`，会把尾门的 2 误判成「打开」。
             return n == 1
+        if kind == "trunk":
+            # ★ 尾门聚合（复刻 App 的 LXLiMeshStateDelegate.getTrunkState()
+            #   smali:37730-37930）：
+            #
+            #     if (lockVal != null) {
+            #         return convertAnyToInt(lockVal) == 0 ? 0 : 1;   // Lock 优先
+            #     }
+            #     int v = convertAnyToInt(switchVal);
+            #     return (v == 2 || v == 0 || v == 3) ? 0 : 1;        // Switch 兜底
+            #
+            #   即：有锁信号时以【锁】为准（0=关，非0=开）；
+            #       否则用开关信号（0/2/3=关，1=开）。
+            #
+            #   ★ 实测（2026-09-23 实车）：
+            #       DoorLockStatus.TrunkDoor   = 0  （已上锁 → 关）
+            #       DoorSwitchStatus.TrunkDoor = 2  （关）
+            #     两者一致，聚合后判定为「关闭」。
+            lock_sig = (self.coordinator.data or {}).get("vss", {}).get(
+                self.entity_description.key.replace("door_trunk", "lock_trunk"))
+            if lock_sig and lock_sig.get("value") is not None:
+                try:
+                    return int(lock_sig["value"]) != 0
+                except (TypeError, ValueError):
+                    pass
+            return n != 0 if n in (0, 1) else (n == 1)
         if kind == "plug":
+            # ★ 2026-09-23 源码：App 用 ACChgrActualConnSts == 2 判"已插枪"
+            #   （XChargeDataHandle.smali:102）
+            #   ⚠️ 值 1 的确切含义未在源码中显式标注（可能"握手中"），
+            #      所以保留 n != 0 的宽松判定 + translations 标注 1 为"连接中"
             return n != 0                     # 0=未插 → on=已连接
+        if kind == "charge_lid":
+            # ★ 2026-09-23：ChrgPorLidStsV2 用 -1 作【无效哨兵】
+            #   （LXLiMeshStateDelegate.getChrgPorLidSts() smali:11921/11972）
+            #   → -1 应映射为 unknown（None），不是"关闭"
+            if n == -1:
+                return None
+            return n != 0                     # 0=关闭，非0=打开
         if kind == "conn":
             return n != 0
         if kind == "warn":

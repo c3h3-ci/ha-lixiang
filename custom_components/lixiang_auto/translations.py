@@ -62,17 +62,30 @@ VALUE_MAPS: dict[str, dict] = {
     "DoorLockStatus.TrunkDoor":       {0: "已上锁", 1: "已解锁"},
     "DoorLockStatus.FrontTrunkDoor":  {0: "已上锁", 1: "已解锁"},
     # 开关状态（0=已关闭 / 1=开启中 / 2=已开启）
-    "DoorSwitchStatus.MainDoor":      {0: "已关闭", 1: "开启中", 2: "主驾车门打开"},
-    "DoorSwitchStatus.CopilotDoor":   {0: "已关闭", 1: "开启中", 2: "副驾车门打开"},
-    "DoorSwitchStatus.BackLeftDoor":  {0: "已关闭", 1: "开启中", 2: "左后车门打开"},
-    "DoorSwitchStatus.BackRightDoor": {0: "已关闭", 1: "开启中", 2: "右后车门打开"},
-    "DoorSwitchStatus.TrunkDoor":     {0: "已关闭", 1: "开启中", 2: "尾门开启"},
-    "MainWindow":           {0: "已关闭", 1: "已开启", 2: "开启中"},
-    "CopilotWindow":        {0: "已关闭", 1: "已开启", 2: "开启中"},
-    "LeftRearWindow":       {0: "已关闭", 1: "已开启", 2: "开启中"},
-    "RightRearWindow":      {0: "已关闭", 1: "已开启", 2: "开启中"},
-    "BackLeftWindow":       {0: "已关闭", 1: "已开启", 2: "开启中"},
-    "BackRightWindow":      {0: "已关闭", 1: "已开启", 2: "开启中"},
+    # ★ 2026-09-23 源码修正（XDoorDataHandle.smali:310）：
+    #   App 是【二态布尔】—— 只有 0 和 1 两个结果：
+    #     int v = toInt(doorValue);
+    #     boolean open = (v == 1);      // 1 = 打开，其他 = 关闭
+    #   尾门额外证据（XHttpOpen/CloseTrunkControl）：
+    #     开成功等 v==1，关成功等 v==2  →  2 = 关闭
+    #   ⚠️ 旧映射把 1 说成"开启中"、2 说成"打开"，恰好颠倒。
+    "DoorSwitchStatus.MainDoor":      {0: "已关闭", 1: "已打开", 2: "已关闭", 3: "已关闭"},
+    "DoorSwitchStatus.CopilotDoor":   {0: "已关闭", 1: "已打开", 2: "已关闭", 3: "已关闭"},
+    "DoorSwitchStatus.BackLeftDoor":  {0: "已关闭", 1: "已打开", 2: "已关闭", 3: "已关闭"},
+    "DoorSwitchStatus.BackRightDoor": {0: "已关闭", 1: "已打开", 2: "已关闭", 3: "已关闭"},
+    "DoorSwitchStatus.TrunkDoor":     {0: "已关闭", 1: "已打开", 2: "已关闭", 3: "已关闭"},
+    # ★ 2026-09-23 源码修正（XWindowDataHandle.smali:556-566）：
+    #   窗口信号是【0-100 的位置值】，不是 {0,1,2} 枚举：
+    #     setMainWindowState(I)   ← (I) 不是 (Z)，存原始 int
+    #     且 L132-143: toInt 后 if-gt v,3 → 返回位置值
+    #   → 只保留 0 的"已关闭"，其余交给数值直显（百分比语义）
+    "MainWindow":           {0: "已关闭"},
+    "CopilotWindow":        {0: "已关闭"},
+    "BackLeftWindow":       {0: "已关闭"},
+    "BackRightWindow":      {0: "已关闭"},
+    # ⚠️ 以下两条是【死条目】：实际 VSS 路径用 BackLeft/BackRightWindow
+    "LeftRearWindow":       {},
+    "RightRearWindow":      {},
     "LockSts":              {0: "车辆已上锁", 1: "车辆已解锁"},
     "FrtSunshdSwSts":       {0: "关闭", 1: "开启"},
     "SunShade":             {0: "关闭", 1: "开启"},

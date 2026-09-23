@@ -365,13 +365,57 @@ class LiCarSensor(CoordinatorEntity, RestoreSensor):
             except (ValueError, TypeError):
                 return STATE_UNKNOWN
         if key == "charge_status":
-            # 充电状态枚举（待标定）
-            _CS = {0: "未充电", 1: "充电中", 2: "充电完成", 3: "充电故障",
-                   4: "预约等待", 5: "放电中", 15: "未充电"}
-            try:
-                return _CS.get(int(val), f"未知({val})")
-            except (ValueError, TypeError):
-                return val
+            # ★ 2026-09-23 复刻 App 的 XChargeDataHandle.getChargeState()
+            #   （smali:80-241）—— 不再自造枚举。
+            #
+            #   App 逻辑（输入 6 个信号 → 输出归一化状态码）：
+            #     if 预约开关==1 && AC枪==2 && 预约state==1      → 90  预约充电
+            #     if chargeStatus==3                             → 50  充电中
+            #     if chargeStatus==5 && chrgComplete==1          → 60  已完成
+            #     if chargeStatus==5 && !complete && eveFlt==1   → 111 告警
+            #     if chargeStatus==5 && !complete                → 70  已停止
+            #     if chargeStatus==7                             → 111 告警
+            #     if chargeStatus==2                             → 40  电池加热
+            #     if chargeStatus==4                             → 80  电池保温
+            #     else                                            → 0
+            #
+            #   枚举（XChargeDataHandle$Status.smali:18-32）：
+            #     BATTERY_HEAT=40 CHARGING=50 COMPETE=60 STOP=70
+            #     BATTERY_INSULATION=80 APPOINT_CHARGE=90 CHARGE_ALARM=111
+            _vss = (self.coordinator.data or {}).get("vss", {})
+
+            def _v(k: str):
+                sig = _vss.get(k) or {}
+                v = sig.get("value")
+                try:
+                    return int(v) if v is not None else None
+                except (TypeError, ValueError):
+                    return None
+
+            cs = _v("charge_status")
+            # 预约充电判定（三条件同时满足）
+            if _v("scheduled_charge_switch") == 1 \
+                    and _v("charge_gun_ac") == 2 \
+                    and _v("scheduled_charge_state") == 1:
+                return "预约充电"
+            if cs == 3:
+                return "充电中"
+            if cs == 5:
+                if _v("charge_complete") == 1:
+                    return "充电完成"
+                if _v("charge_fault") == 1:
+                    return "充电告警"
+                return "已停止"
+            if cs == 7:
+                return "充电告警"
+            if cs == 2:
+                return "电池加热"
+            if cs == 4:
+                return "电池保温"
+            # 未在 App 分支内的原始值（0/1/10/15 等）→ App 归 DEFAULT
+            if cs is None:
+                return None
+            return "—"
         if key.startswith("seat_") and key.endswith("_heat"):
             return {0: "关", 1: "低", 2: "中", 3: "高"}.get(int(val) if str(val).isdigit() else -1, val)
         if key.startswith("seat_") and key.endswith("_vent"):
