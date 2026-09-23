@@ -359,16 +359,34 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         pending = getattr(self, "_pending", None) or {}
         phone = pending.get("phone") or data.get(CONF_PHONE) or ""
 
-        # ① 补齐 API 签名凭据（打包在集成里的默认值）
+        # ① 补齐 API 签名凭据
+        #    ★ 这些凭据每台设备独有，不内置；优先用用户填的，
+        #      只有 DEFAULT_* 非空时才回填（兼容自编译版本）。
+        missing: list[str] = []
         for conf_key, default_val in (
             (CONF_HAC_KEY, DEFAULT_HAC_KEY),
             (CONF_KEY_ID, DEFAULT_KEY_ID),
             (CONF_XDEV, DEFAULT_XDEV),
             (CONF_APP_TOKEN, DEFAULT_APP_TOKEN),
         ):
-            if not data.get(conf_key):
+            if data.get(conf_key):
+                continue
+            if default_val:
                 data[conf_key] = default_val
-                _LOGGER.debug("补齐 %s", conf_key)
+                _LOGGER.debug("补齐 %s（内置默认值）", conf_key)
+            elif conf_key != CONF_APP_TOKEN:
+                missing.append(conf_key)
+
+        if missing:
+            _LOGGER.error(
+                "缺少签名凭据 %s —— 请在「手动填写凭据」里补齐。"
+                "提取方法见 docs/credential-guide.md", missing)
+            return self.async_abort(
+                reason="missing_credentials",
+                description_placeholders={
+                    "fields": "、".join(missing),
+                },
+            )
 
         # ② VIN：优先用户手填/暂存，否则从账号名下车辆自动取
         #    ★ 必须在 executor 里跑（_resolve_vin 是同步 HTTP，直接调用会
