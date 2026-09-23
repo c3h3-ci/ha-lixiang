@@ -29,6 +29,25 @@ _LOGGER = logging.getLogger(LOGGER_NAME)
 #   warn   : 0=正常, 非0=告警   → on = 告警
 #   heat   : 0=关, 非0=开       → on = 开启
 #   json   : 从 JSON 字段判读
+# ★ 2026-09-24 新增：字符串 → HA 枚举的映射
+#   供 signals.to_binary_description() 使用（架构方案 2.5）
+_DCLASS_BS: dict[str, BinarySensorDeviceClass] = {
+    "LOCK": BinarySensorDeviceClass.LOCK,
+    "DOOR": BinarySensorDeviceClass.DOOR,
+    "PLUG": BinarySensorDeviceClass.PLUG,
+    "CONNECTIVITY": BinarySensorDeviceClass.CONNECTIVITY,
+    "PROBLEM": BinarySensorDeviceClass.PROBLEM,
+    "MOTION": BinarySensorDeviceClass.MOTION,
+    "WINDOW": BinarySensorDeviceClass.WINDOW,
+    "OPENING": BinarySensorDeviceClass.OPENING,
+    "BATTERY_CHARGING": BinarySensorDeviceClass.BATTERY_CHARGING,
+    "RUNNING": BinarySensorDeviceClass.RUNNING,
+    "SAFETY": BinarySensorDeviceClass.SAFETY,
+    "SOUND": BinarySensorDeviceClass.SOUND,
+    "VIBRATION": BinarySensorDeviceClass.VIBRATION,
+}
+
+
 BINARY_DESCRIPTIONS: tuple[tuple[BinarySensorEntityDescription, str], ...] = (
     # ---- 车门锁（on = 未落锁）----
     (BinarySensorEntityDescription(key="lock_main", name="主驾门锁",
@@ -129,9 +148,11 @@ async def async_setup_entry(
     )
     if vin:
         device_info["serial_number"] = vin
+    # ★ 2026-09-24 接入 signals.py（架构方案 2.5）
+    from .signals import to_binary_descriptions
     async_add_entities(
-        LiCarBinarySensor(coordinator, desc, kind, vin, device_info)
-        for desc, kind in BINARY_DESCRIPTIONS
+        LiCarBinarySensor(coordinator, desc, spec, vin, device_info)
+        for desc, spec in to_binary_descriptions()
     )
 
 
@@ -140,29 +161,51 @@ class LiCarBinarySensor(CoordinatorEntity, BinarySensorEntity):
 
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator, description, kind: str, vin: str,
+    def __init__(self, coordinator, description, spec, vin: str,
                  device_info=None) -> None:
+        """★ 2026-09-24（架构方案 2.5）：第三个参数从 kind 字符串改为 SignalSpec。
+
+        kind 字符串分派（`if kind == "lock"` ...）已改为
+        spec.semantics 枚举分派，语义更明确、可单测。
+        """
         super().__init__(coordinator)
         self.entity_description = description
         self._rid = route_id_of_vin(vin)
+        self._spec = spec
 
         self._attr_unique_id = f"{DOMAIN}_{self._rid}_{description.key}"
         if device_info is not None:
             self._attr_device_info = device_info
-        self._kind = kind
 
     @property
     def is_on(self) -> bool | None:
+        """根据 spec.semantics 判定开关状态（★ 架构方案 2.5）。
+
+        原实现用 kind 字符串分派（`if kind == "lock"` ...），
+        现改为 Semantics 枚举 —— 语义在 signals.py 里声明，可单测。
+
+        语义对照（详见 signals.Semantics 与各分支注释）：
+          LOCKED     0=已落锁 → on=未落锁
+          DOOR_OPEN  ==1 才开（XDoorDataHandle.smali:310）
+          TRUNK      锁优先聚合（LXLiMeshStateDelegate.getTrunkState）
+          PLUGGED    非0 = 已插入
+          CHARGE_LID -1=无效(unknown)，0=关，非0=开
+          CONNECTED  非0 = 已连接
+          ALARM      非0 = 告警
+          SWITCH_ON  非0 = 开启
+        """
+        from .signals import Semantics
+
         sig = (self.coordinator.data or {}).get("vss", {}).get(
             self.entity_description.key)
         if sig is None or sig.get("value") is None:
             return None
         val = sig.get("value")
-        kind = self._kind
+        sem = getattr(self._spec, "semantics", Semantics.RAW)
 
-        # JSON 字段
-        if kind.startswith("json:"):
-            field = kind.split(":", 1)[1]
+        # JSON 字段（原 "json:xxx" 编码）
+        if sem == Semantics.JSON_FIELD:
+            field = getattr(self._spec, "json_field", "") or ""
             try:
                 obj = json.loads(val) if isinstance(val, str) else val
                 return int(obj.get(field, 0)) != 0
@@ -178,42 +221,25 @@ class LiCarBinarySensor(CoordinatorEntity, BinarySensorEntity):
         except (TypeError, ValueError):
             try:
                 return bool(val)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 return None
 
-        if kind == "lock":
+        if sem == Semantics.LOCKED:
             return n != 0                     # 0=已落锁 → on=未落锁
-        if kind == "door":
-            # ★ 2026-09-23 从 App 源码还原（XDoorDataHandle）：
-            #   所有 DoorSwitchStatus.* 的统一语义是「== 1 才算打开」：
-            #
+
+        if sem == Semantics.DOOR_OPEN:
+            # ★ 从 App 源码还原（XDoorDataHandle）：
             #     int v = toInt(doorValue);
-            #     boolean open = (v == 1);        // 只有 1 → true
-            #     model.setXxxDoorState(open);
-            #
-            #   尾门的额外证据：
-            #     XHttpOpenTrunkControl  → 等 v == 1 视为开成功
-            #     XHttpCloseTrunkControl → 等 v == 2 视为关成功
-            #
-            #   ⚠️ 旧实现用 `n != 0`，会把尾门的 2 误判成「打开」。
+            #     boolean open = (v == 1);      // 只有 1 → true
+            #   ⚠️ 旧实现用 `n != 0` 会把尾门的 2 误判成「打开」。
             return n == 1
-        if kind == "trunk":
-            # ★ 尾门聚合（复刻 App 的 LXLiMeshStateDelegate.getTrunkState()
+
+        if sem == Semantics.TRUNK:
+            # ★ 尾门聚合（复刻 LXLiMeshStateDelegate.getTrunkState()
             #   smali:37730-37930）：
-            #
-            #     if (lockVal != null) {
-            #         return convertAnyToInt(lockVal) == 0 ? 0 : 1;   // Lock 优先
-            #     }
+            #     if (lockVal != null) return convertAnyToInt(lockVal) == 0 ? 0 : 1;
             #     int v = convertAnyToInt(switchVal);
-            #     return (v == 2 || v == 0 || v == 3) ? 0 : 1;        // Switch 兜底
-            #
-            #   即：有锁信号时以【锁】为准（0=关，非0=开）；
-            #       否则用开关信号（0/2/3=关，1=开）。
-            #
-            #   ★ 实测（2026-09-23 实车）：
-            #       DoorLockStatus.TrunkDoor   = 0  （已上锁 → 关）
-            #       DoorSwitchStatus.TrunkDoor = 2  （关）
-            #     两者一致，聚合后判定为「关闭」。
+            #     return (v == 2 || v == 0 || v == 3) ? 0 : 1;
             lock_sig = (self.coordinator.data or {}).get("vss", {}).get(
                 self.entity_description.key.replace("door_trunk", "lock_trunk"))
             if lock_sig and lock_sig.get("value") is not None:
@@ -222,23 +248,19 @@ class LiCarBinarySensor(CoordinatorEntity, BinarySensorEntity):
                 except (TypeError, ValueError):
                     pass
             return n != 0 if n in (0, 1) else (n == 1)
-        if kind == "plug":
-            # ★ 2026-09-23 源码：App 用 ACChgrActualConnSts == 2 判"已插枪"
+
+        if sem == Semantics.PLUGGED:
+            # ★ App 用 ACChgrActualConnSts == 2 判「已插枪」
             #   （XChargeDataHandle.smali:102）
-            #   ⚠️ 值 1 的确切含义未在源码中显式标注（可能"握手中"），
-            #      所以保留 n != 0 的宽松判定 + translations 标注 1 为"连接中"
-            return n != 0                     # 0=未插 → on=已连接
-        if kind == "charge_lid":
-            # ★ 2026-09-23：ChrgPorLidStsV2 用 -1 作【无效哨兵】
-            #   （LXLiMeshStateDelegate.getChrgPorLidSts() smali:11921/11972）
-            #   → -1 应映射为 unknown（None），不是"关闭"
+            #   ⚠️ 值 1 的含义未在源码中确证，保留宽松判定
+            return n != 0
+
+        if sem == Semantics.CHARGE_LID:
+            # ★ ChrgPorLidStsV2 用 -1 作【无效哨兵】
+            #   （LXLiMeshStateDelegate.getChrgPorLidSts() smali:11921）
             if n == -1:
                 return None
-            return n != 0                     # 0=关闭，非0=打开
-        if kind == "conn":
             return n != 0
-        if kind == "warn":
-            return n != 0                     # 0=正常 → on=告警
-        if kind == "heat":
-            return n != 0
+
+        # CONNECTED / ALARM / SWITCH_ON / RAW 等：非 0 即真
         return n != 0

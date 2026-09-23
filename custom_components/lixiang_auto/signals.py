@@ -470,7 +470,7 @@ SIGNALS: dict[str, SignalSpec] = {
         semantics=Semantics.LOCKED,
         device_class="LOCK",
         icon="mdi:car-door-lock",
-        platforms=frozenset(),  # ★ 车辆位置（device_tracker 平台用，不建 sensor）
+        platforms=frozenset({'binary_sensor'}),
     ),  # 有翻译映射
     "lock_back_right": SignalSpec(
         key="lock_back_right",
