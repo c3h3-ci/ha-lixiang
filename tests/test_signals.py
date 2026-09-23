@@ -87,9 +87,14 @@ class TestKnownSignals:
         assert s.device_class == "BATTERY"
 
     def test_door_trunk_semantics(self):
-        """★ 尾门：==1 才开（曾用 n!=0 导致 2 被误判）"""
+        """★ 尾门：锁优先聚合（getTrunkState）
+
+        历史：
+          · 曾用 n != 0 → 值 2 被误判为"打开"（391cd8a 修）
+          · 现用 TRUNK 语义 —— 有锁信号时以锁为准
+        """
         s = sg.SIGNALS["door_trunk"]
-        assert s.semantics == sg.Semantics.DOOR_OPEN
+        assert s.semantics == sg.Semantics.TRUNK
         assert "binary_sensor" in s.platforms
 
     def test_charge_port_lid_uses_v2(self):
@@ -300,7 +305,7 @@ class TestBinaryEquivalence:
         return out
 
     KIND_TO_SEM = {
-        "lock": "LOCKED", "door": "DOOR_OPEN", "trunk": "DOOR_OPEN",
+        "lock": "LOCKED", "door": "DOOR_OPEN", "trunk": "TRUNK",
         "plug": "PLUGGED", "conn": "CONNECTED", "warn": "ALARM",
         "heat": "SWITCH_ON", "charge_lid": "CHARGE_LID",
     }
@@ -316,11 +321,20 @@ class TestBinaryEquivalence:
                 f"{key}: name 旧={o['name']} 新={sg.SIGNALS[key].name}"
 
     def test_semantics_match_kind(self):
-        """★ kind 字符串 → Semantics 枚举 的映射必须正确"""
+        """★ kind 字符串 → Semantics 枚举 的映射必须正确
+
+        旧编码：
+          "lock" / "door" / "trunk" / "plug" / "conn" / "warn" / "heat"
+          "json:xxx"   ← JSON 字段判定
+        """
         for key, o in self._old_binary_table().items():
-            want = self.KIND_TO_SEM.get(o["kind"], "RAW")
+            kind = o["kind"]
+            if kind.startswith("json:"):
+                want = "JSON_FIELD"
+            else:
+                want = self.KIND_TO_SEM.get(kind, "RAW")
             got = sg.SIGNALS[key].semantics.value.upper()
-            assert want == got, f"{key}: kind={o['kind']} → {got}（应为 {want}）"
+            assert want == got, f"{key}: kind={kind} → {got}（应为 {want}）"
 
     def test_device_class_present(self):
         """binary_sensor 应有 device_class 或 icon（否则 UI 无标识）"""
@@ -349,3 +363,52 @@ class TestSemanticsEnum:
         for s in sg.SIGNALS.values():
             if s.semantics == sg.Semantics.DOOR_OPEN and s.platforms:
                 assert "binary_sensor" in s.platforms, f"{s.key}: DOOR_OPEN 但不在 binary_sensor"
+
+
+class TestSemanticsIntegrity:
+    """★ 防护测试：binary_sensor.py 引用的 Semantics 成员必须存在。
+
+    背景：2026-09-24 连续两次踩坑 ——
+      · is_on 里写了 Semantics.JSON_FIELD，但枚举没定义
+      · is_on 里写了 Semantics.TRUNK，但枚举没定义
+    两次都导致 binary_sensor 平台大面积 unavailable。
+    """
+
+    @staticmethod
+    def _referenced_semantics():
+        """从 binary_sensor.py 提取所有 Semantics.XXX 引用。"""
+        import re
+        from pathlib import Path
+        src = (Path(__file__).resolve().parent.parent /
+               "custom_components/lixiang_auto/binary_sensor.py").read_text(encoding="utf-8")
+        return set(re.findall(r'Semantics\.([A-Z_]+)', src))
+
+    def test_all_referenced_members_exist(self):
+        """binary_sensor.py 引用的每个 Semantics 成员都必须已定义"""
+        refs = self._referenced_semantics()
+        defined = {e.name for e in sg.Semantics}
+        missing = refs - defined
+        assert not missing, (
+            f"binary_sensor.py 引用了未定义的 Semantics 成员: {missing}\n"
+            f"已定义: {sorted(defined)}"
+        )
+
+    def test_no_unused_semantics(self):
+        """每个非 RAW 的 Semantics 都应至少有一个信号在用"""
+        used = {s.semantics for s in sg.SIGNALS.values() if s.platforms}
+        defined = set(sg.Semantics) - {sg.Semantics.RAW}
+        unused = defined - used
+        assert not unused, f"未使用的语义（可能是笔误）: {unused}"
+
+    def test_json_field_signals_have_field(self):
+        """JSON_FIELD 语义的信号必须指定 json_field"""
+        for s in sg.SIGNALS.values():
+            if s.semantics == sg.Semantics.JSON_FIELD:
+                assert s.json_field, f"{s.key}: JSON_FIELD 但没指定 json_field"
+
+    def test_platform_conversion_functions_exist(self):
+        """★ 平台转换函数必须存在（曾两次因丢失而大面积 unavailable）"""
+        for fn in ("to_sensor_description", "to_sensor_descriptions",
+                   "to_binary_description", "to_binary_descriptions",
+                   "specs_for", "by_freq", "paths_for"):
+            assert hasattr(sg, fn), f"signals.py 缺少 {fn}()"

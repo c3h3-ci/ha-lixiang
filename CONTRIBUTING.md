@@ -13,10 +13,16 @@
 ② 改代码（在 HA 测试机）
      /media/duola/devdata/AI-workspace/home-assistant-nas/ha-test/config/custom_components/lixiang_auto/
      
-③ 提交 + 开 PR
+③ ★ 验证（改完必跑，7 项检查）
+     ./li-verify.sh
+     
+     ⚠️ 这步不能省 —— 2026-09-24 曾因跳过它导致 4 次
+        HA 实体大面积不可用（详见 VERIFY.md）
+     
+④ 提交 + 开 PR（内置验证拦截）
      ./li-pr.sh submit
      
-④ 人在 GitHub 上 review + 合并
+⑤ 人在 GitHub 上 review + 合并
      https://github.com/C3H3-AI/ha-lixiang/pulls
 ```
 
@@ -48,6 +54,39 @@
 - [ ] 附上变更原因的说明（尤其是"为什么这样改"）
 - [ ] 涉及信号语义的改动，**必须附 App 源码依据**（文件:行号）
 - [ ] 涉及行为变更的，附验证方法
+
+---
+
+## ⚠️ PR 合并后的规则
+
+**PR 合并后，不要继续在同一个分支上提交！**
+
+```
+❌ 错误做法：
+   ① ./li-pr.sh start feat xxx      → 建分支
+   ② 改代码 + 提交 + 开 PR #11
+   ③ 人合并 PR #11
+   ④ 又在同一分支上提交修复         → ★ 推不进 main！
+      （PR 已关闭，新 commit 无处可去）
+
+✅ 正确做法：
+   ① PR 合并后，立刻切回 main 并 pull
+   ② 从 main 建【新分支】做后续改动
+   ③ 开新 PR
+```
+
+**2026-09-24 实际踩坑**：PR #11 合并后又在原分支提交了 2 个修复，
+导致 main 上是有 bug 的版本（缺 `to_binary_descriptions` 等），
+需要 PR #12 补救。
+
+### 检查方法
+
+```bash
+# 提 PR 前确认：当前分支是否已合并到 main？
+git log --oneline origin/main..HEAD    # 有输出 = 有新 commit（正常）
+git branch -r --merged origin/main | grep "$(git branch --show-current)"
+#   ↑ 有输出 = 该分支已合并 → ★ 应改用新分支！
+```
 
 ---
 

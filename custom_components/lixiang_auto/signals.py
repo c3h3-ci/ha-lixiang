@@ -28,11 +28,13 @@ class Semantics(StrEnum):
     RAW = "raw"                # 原样输出
     LOCKED = "locked"          # 0=已锁 → on = 未落锁
     DOOR_OPEN = "door_open"    # ==1 才开（XDoorDataHandle）
+    TRUNK = "trunk"            # 尾门：锁优先聚合（getTrunkState）
     PLUGGED = "plugged"        # 非0 = 已连接
     CONNECTED = "connected"    # 非0 = 已连接
     ALARM = "alarm"            # 非0 = 告警
     SWITCH_ON = "switch_on"    # 非0 = 开启
     CHARGE_LID = "charge_lid"  # -1=无效(unknown)，0=关，非0=开
+    JSON_FIELD = "json_field"  # 值是 JSON，取 json_field 指定的字段判 0/1
 
 
 @dataclass(frozen=True, slots=True)
@@ -358,7 +360,7 @@ SIGNALS: dict[str, SignalSpec] = {
         path="Vehicle.Body.DoorSwitchStatus.TrunkDoor",
         name="后备箱门",
         freq=Freq.HIGH,
-        semantics=Semantics.DOOR_OPEN,
+        semantics=Semantics.TRUNK,
         device_class="DOOR",
         icon="mdi:car-door",
         platforms=frozenset({'binary_sensor'}),
@@ -916,6 +918,8 @@ SIGNALS: dict[str, SignalSpec] = {
         freq=Freq.HIGH,
         icon="mdi:shield-car",
         platforms=frozenset({'binary_sensor'}),
+        semantics=Semantics.JSON_FIELD,
+        json_field="sentinelStatus",
     ),  # 有翻译映射
     "sentry_switch": SignalSpec(
         key="sentry_switch",
@@ -924,6 +928,8 @@ SIGNALS: dict[str, SignalSpec] = {
         freq=Freq.HIGH,
         icon="mdi:shield-check",
         platforms=frozenset({'binary_sensor'}),
+        semantics=Semantics.JSON_FIELD,
+        json_field="sentinelSwitch",
     ),
     "sentry_video_count": SignalSpec(
         key="sentry_video_count",
@@ -1221,6 +1227,33 @@ def to_sensor_descriptions():
 
 
 
+def to_binary_description(spec: SignalSpec):
+    """把 SignalSpec 转成 BinarySensorEntityDescription。
+
+    ★ 架构方案 2.5：替代 binary_sensor.py 的 (Description, kind) 元组。
+      语义由 spec.semantics 表达（枚举），不再是字符串分派。
+    """
+    from homeassistant.components.binary_sensor import BinarySensorEntityDescription
+
+    from .binary_sensor import _DCLASS_BS
+
+    kw: dict = {"key": spec.key, "name": spec.name}
+    if spec.icon:
+        kw["icon"] = spec.icon
+    if spec.device_class and spec.device_class in _DCLASS_BS:
+        kw["device_class"] = _DCLASS_BS[spec.device_class]
+    return BinarySensorEntityDescription(**kw)
+
+
+def to_binary_descriptions():
+    """批量转换（返回 (desc, spec) 元组）。"""
+    return [
+        (to_binary_description(s), s)
+        for s in specs_for("binary_sensor")
+    ]
+
+
+
 def specs_for(platform: str, features: dict | None = None) -> list[SignalSpec]:
     """按平台 + 车型功能过滤信号。
 
@@ -1273,5 +1306,6 @@ __all__ = [
     "Freq", "Semantics", "SignalSpec", "SIGNALS",
     "specs_for", "by_freq", "paths_for", "path_of", "value_map_of",
     "to_sensor_description", "to_sensor_descriptions",
+    "to_binary_description", "to_binary_descriptions",
     "VSS_PATHS_COMPAT",
 ]
