@@ -148,6 +148,13 @@ async def async_get_config_entry_diagnostics(
             vehicle["vehicle_count"] = len(vlist)
 
     return {
+
+
+        # ★ 2026-09-24：集成健康状态（失败计数 / 在线状态）
+
+
+        "health": (coordinator.health if coordinator is not None else None),
+
         "manifest": {
             "version": manifest.get("version"),
             "domain": manifest.get("domain"),
