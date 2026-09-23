@@ -61,6 +61,15 @@ VALUE_MAPS: dict[str, dict] = {
     "DoorLockStatus.BackRightDoor":   {0: "已上锁", 1: "已解锁"},
     "DoorLockStatus.TrunkDoor":       {0: "已上锁", 1: "已解锁"},
     "DoorLockStatus.FrontTrunkDoor":  {0: "已上锁", 1: "已解锁"},
+    # ★ 2026-09-23 补充（task-14 高价值遗漏信号）
+    "PowerBatteryType":       {0: "未知", 1: "三元锂", 2: "磷酸铁锂"},
+    "OrderChargingMode":      {0: "未设置", 1: "按时间", 2: "按电价"},
+    "MSG_DCDCFltLvl":         {0: "正常", 1: "一级故障", 2: "二级故障", 3: "三级故障"},
+    "LowVolPwrMdSts":         {0: "正常", 1: "低压模式"},
+    "LowVolPwrMdFlag":        {0: "关闭", 1: "开启"},
+    "BatteryInsulation":      {0: "未开启", 1: "已开启"},
+    "EVESFltStopChrg":        {0: "正常", 1: "故障"},
+    "CaseCoverStatus":        {0: "未装", 1: "已装"},
     # 开关状态（0=已关闭 / 1=开启中 / 2=已开启）
     # ★ 2026-09-23 源码修正（XDoorDataHandle.smali:310）：
     #   App 是【二态布尔】—— 只有 0 和 1 两个结果：

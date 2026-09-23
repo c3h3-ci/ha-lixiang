@@ -163,3 +163,37 @@ class TestRegressions:
     def test_zero_is_valid_value(self):
         """★ 0 不等于缺失（历史 bug：曾把 0 当 None）"""
         assert render_value("charge_limit", 0, {"value": 0}, {}) == 0
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# 8. 回归：确保 translate() 被真正调用
+# ───────────────────────────────────────────────────────────────────────────
+class TestTranslateWired:
+    """★ 2026-09-23 bug：抽 rendering.py 时漏了 import，
+    导致 translate() 从未被调用，值永远是裸数字。
+
+    这组测试确保「翻译管线是接通的」。
+    """
+
+    def test_vss_paths_imported(self):
+        """VSS_PATHS 必须可用（否则不会触发翻译）"""
+        import rendering
+        assert hasattr(rendering, "VSS_PATHS")
+        assert len(rendering.VSS_PATHS) > 50, "VSS_PATHS 应包含全部信号路径"
+
+    def test_translate_imported(self):
+        import rendering
+        assert hasattr(rendering, "translate")
+        assert callable(rendering.translate)
+
+    def test_raw_number_is_translated(self):
+        """有翻译映射的信号，裸数字应变成中文"""
+        # LowVolPwrMdSts: {0: "正常", 1: "低压模式"}
+        d = {}
+        r = render_value("low_vol_status", 0, {"value": 0}, d)
+        assert r == "正常", f"应翻译为「正常」，实际 {r!r}"
+
+    def test_untranslated_passthrough(self):
+        """无翻译映射的信号，原值透传"""
+        r = render_value("battery_level", 55, {"value": 55}, {})
+        assert r == 55

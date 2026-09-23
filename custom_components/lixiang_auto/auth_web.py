@@ -31,6 +31,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import secrets
 import time
 from typing import Any
@@ -81,119 +82,22 @@ def mark_trusted(tok: str) -> None:
         s["trusted"] = True
 
 
-_LOGIN_HTML = """<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>理想汽车 · 首次登录</title>
-<style>
-  * { box-sizing: border-box; }
-  body { margin:0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-         background:#f5f6f8; color:#1f2329; min-height:100vh; }
-  .wrap { max-width: 560px; margin: 0 auto; padding: 24px 16px; }
-  .card { background:#fff; border-radius:14px; padding:22px;
-          box-shadow:0 2px 12px rgba(0,0,0,.06); }
-  h1 { font-size:20px; margin:0 0 8px; }
-  .sub { color:#6b7280; font-size:13px; line-height:1.7; margin-bottom:16px; }
-  .steps { background:#f0f7ff; border-left:3px solid #1677ff; padding:11px 13px;
-           border-radius:6px; font-size:13px; line-height:2; margin-bottom:18px; }
-  .steps b { color:#1677ff; }
-  .btn { display:block; width:100%; padding:15px; border:none; border-radius:10px;
-         background:#1677ff; color:#fff; font-size:16px; font-weight:600;
-         cursor:pointer; text-align:center; text-decoration:none;
-         transition: background .15s; }
-  .btn:hover { background:#0958d9; }
-  .btn:active { background:#003eb3; }
-  .hint { font-size:12px; color:#9ca3af; text-align:center; margin-top:10px; }
-  .status { margin-top:18px; padding:13px 15px; border-radius:9px; font-size:14px;
-            display:flex; align-items:center; gap:9px; }
-  .status.wait { background:#fff7e6; color:#ad6800; }
-  .status.ok   { background:#f6ffed; color:#237804; font-weight:600; }
-  .status.err  { background:#fff1f0; color:#cf1322; }
-  .dot { width:10px; height:10px; border-radius:50%; background:currentColor;
-         animation: pulse 1.4s infinite; flex-shrink:0; }
-  .ok .dot { animation:none; }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.25} }
-  .dev { font-family: ui-monospace, Menlo, monospace; font-size:11px;
-         color:#c0c4cc; word-break:break-all; margin-top:14px;
-         padding-top:12px; border-top:1px solid #f0f0f0; }
-  .url { font-family: ui-monospace, Menlo, monospace; font-size:11px;
-         color:#8c8c8c; word-break:break-all; background:#fafafa;
-         padding:8px; border-radius:6px; margin-top:10px; }
-</style>
-</head>
-<body>
-<div class="wrap">
-  <div class="card">
-    <h1>理想汽车 · 首次登录验证</h1>
-    <div class="sub">
-      新设备登录需要短信验证，而验证码有<b>滑动验证</b>保护，HA 无法自动完成。
-      请点下面的按钮在<b>新窗口</b>里完成登录 —— HA 会在后台自动检测，成功后无需再做任何操作。
-    </div>
+def _load_login_html() -> str:
+    """读取登录辅助页面的 HTML 模板。
 
-    <div class="steps">
-      <b>①</b> 点下面的蓝色按钮（会在新窗口打开理想登录页）<br>
-      <b>②</b> 输手机号 + 密码，点「获取验证码」<br>
-      <b>③</b> <b>拖动滑块</b>完成验证 → 收到短信 → 输验证码<br>
-      <b>④</b> 点「登录」→ 看到下面变绿 = 完成，回 HA 继续
-    </div>
+    ★ 2026-09-23 外置（架构方案 2.7）：
+      原先内联 113 行 HTML 在 Python 文件里 —— 改一行样式要动 .py、
+      无语法高亮、diff 噪音大。现改为独立 .html 文件。
 
-    <a class="btn" id="openBtn" href="%%LOGIN_URL%%" target="_blank" rel="noopener">
-      ▶ 点这里打开理想登录页
-    </a>
-    <div class="hint">如果按钮没反应，请手动复制下面的地址到浏览器打开</div>
-    <div class="url" id="urlBox">%%LOGIN_URL%%</div>
+    模板占位符（运行时替换）：
+      %%LOGIN_URL%%    理想官方登录页地址（带 device_id）
+      %%DEVICE_ID%%    本次登录使用的 device_id
+      %%TOKEN%%        辅助页面会话 token
+    """
+    path = os.path.join(os.path.dirname(__file__), "login_page.html")
+    with open(path, encoding="utf-8") as fh:
+        return fh.read()
 
-    <div class="status wait" id="st">
-      <span class="dot"></span>
-      <span id="msg">等待你完成登录…（HA 每 5 秒检测一次）</span>
-    </div>
-    <div class="dev">device_id: %%DEVICE_ID%%</div>
-  </div>
-</div>
-<script>
-const TOKEN = "%%TOKEN%%";
-const LOGIN_URL = "%%LOGIN_URL%%";
-let n = 0;
-
-// 点按钮后自动开始轮询
-document.getElementById('openBtn').addEventListener('click', () => {
-  document.getElementById('msg').textContent = '已打开登录页，请在新窗口里完成登录…';
-});
-
-async function poll() {
-  n++;
-  try {
-    const r = await fetch("./lixiang-login/status?token=" + encodeURIComponent(TOKEN));
-    const j = await r.json();
-    if (j.trusted) {
-      const st = document.getElementById('st');
-      st.className = "status ok";
-      document.getElementById('msg').textContent =
-        "✅ 登录成功！设备已受信任，请回到 HA 继续（此页面可关闭）";
-      return;
-    }
-    if (j.expired) {
-      document.getElementById('st').className = "status err";
-      document.getElementById('msg').textContent =
-        "⚠️ 会话已过期（15 分钟），请回到 HA 重新发起配置";
-      return;
-    }
-    if (n > 1) {
-      document.getElementById('msg').textContent =
-        "等待你完成登录…（已检测 " + n + " 次）";
-    }
-  } catch (e) {
-    document.getElementById('msg').textContent = "检测中…（网络异常，继续重试）";
-  }
-  setTimeout(poll, 5000);
-}
-setTimeout(poll, 3000);
-</script>
-</body>
-</html>
-"""
 
 
 class LiXiangLoginView(HomeAssistantView):
@@ -224,7 +128,7 @@ class LiXiangLoginView(HomeAssistantView):
             "&audience=1j0vgTqagJUHuT6nLmbTGx"
             f"&device_id={dev}"
         )
-        html = (_LOGIN_HTML
+        html = (_load_login_html()
                 .replace("%%LOGIN_URL%%", login_url)
                 .replace("%%DEVICE_ID%%", dev)
                 .replace("%%TOKEN%%", tok))

@@ -128,6 +128,13 @@ SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
     # ---- 车门 ----
     # ---- 车窗 ----
     _mk("window_main", ('主驾车窗', None, '%', None, 'mdi:car-door', '车窗')),
+    # ⚠️ window_skylight 移除了：L6 实测 SkylightWindow 返回 None
+    #    （该车型可能无天窗，或信号名不同 —— 保留 VSS 路径供其他车型用）
+    # ★ 2026-09-23 补充（task-14 高价值遗漏）
+    _mk("low_vol_status", ('低压电源状态', None, None, None, 'mdi:car-battery', '电池')),
+    # ⚠️ mileage_final 移除了：L6 实测 MileageFinalResult 返回 None
+    _mk("battery_type", ('电池类型', None, None, None, 'mdi:battery-sync', '电池')),
+    _mk("charge_order_mode", ('预约充电模式', None, None, None, 'mdi:calendar-clock', '充电桩')),
     _mk("window_copilot", ('副驾车窗', None, '%', None, 'mdi:car-door', '车窗')),
     _mk("window_back_left", ('左后车窗', None, '%', None, 'mdi:car-door', '车窗')),
     _mk("window_back_right", ('右后车窗', None, '%', None, 'mdi:car-door', '车窗')),
@@ -148,6 +155,12 @@ SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
     _mk("seat_sm_heat", ('二排中座椅加热', None, None, None, 'mdi:car-seat-heater', '座椅')),
     _mk("seat_tl_heat", ('三排左座椅加热', None, None, None, 'mdi:car-seat-heater', '座椅')),
     _mk("seat_tr_heat", ('三排右座椅加热', None, None, None, 'mdi:car-seat-heater', '座椅')),
+    # ★ 2026-09-23 补充（task-14 高价值遗漏）
+    _mk("seat_sl_vent", ('二排左座椅通风', None, None, None, 'mdi:car-seat-cooler', '座椅')),
+    _mk("seat_sr_vent", ('二排右座椅通风', None, None, None, 'mdi:car-seat-cooler', '座椅')),
+    _mk("seat_tl_vent", ('三排左座椅通风', None, None, None, 'mdi:car-seat-cooler', '座椅')),
+    _mk("seat_tr_vent", ('三排右座椅通风', None, None, None, 'mdi:car-seat-cooler', '座椅')),
+    _mk("seat_tm_heat", ('三排中座椅加热', None, None, None, 'mdi:car-seat-heater', '座椅')),
     # ---- 冰箱 ----
     _mk("fridge_status", ('冰箱工作状态', None, None, None, 'mdi:fridge', '冰箱')),
     _mk("fridge_mode", ('冰箱模式', None, None, None, 'mdi:fridge-outline', '冰箱')),

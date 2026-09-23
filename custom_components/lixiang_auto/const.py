@@ -165,6 +165,33 @@ VSS_PATHS = {
     "seat_sm_heat": "Vehicle.Cabin.Seat.SMSeatHeatState",
     "seat_tl_heat": "Vehicle.Cabin.Seat.TLSeatHeatState",
     "seat_tr_heat": "Vehicle.Cabin.Seat.TRSeatHeatState",
+    # ★ 2026-09-23 补充（task-14 报告的高价值遗漏项）
+    #   二/三排座椅通风（原先只有前排）
+    "seat_sl_vent": "Vehicle.Cabin.Seat.SLSeatVentilationState",
+    "seat_sr_vent": "Vehicle.Cabin.Seat.SRSeatVentilationState",
+    "seat_tl_vent": "Vehicle.Cabin.Seat.TLSeatVentilationState",
+    "seat_tr_vent": "Vehicle.Cabin.Seat.TRSeatVentilationState",
+    # 三排中间加热
+    "seat_tm_heat": "Vehicle.Cabin.Seat.TMSeatHeatState",
+    # 天窗位置（0-100）
+    "window_skylight": "Vehicle.Body.WindowPosition.SkylightWindow",
+    # 车机连接（App 官方订阅，原先只接了 5G/xcu）
+    "online_huf": "Vehicle.ConnectManager.ConnectStatus.hu-f",
+    # 钥匙壳/保护套状态
+    "case_cover": "Vehicle.Body.DoorSwitchStatus.CaseCoverStatus",
+    # 充电相关（getChargeState 的判据）
+    "eves_flt_stop_chrg": "Vehicle.Powertrain.Battery.EVESFltStopChrg",
+    "battery_insulation": "Vehicle.Powertrain.ChargingPile.BatteryInsulation",
+    # 低压电源状态（App 订阅，原先只接了 Flag）
+    "low_vol_status": "Vehicle.Body.Power.LowVolPwrMdSts",
+    # DCDC 故障等级
+    "dcdc_fault_level": "Vehicle.MSG.MSG_DCDCFltLvl",
+    # CLTC 里程最终结果（App 订阅）
+    "mileage_final": "Vehicle.Cabin.CLTC.MileageFinalResult",
+    # 电池类型（三元锂/磷酸铁锂）
+    "battery_type": "Vehicle.Powertrain.Battery.PowerBatteryType",
+    # 预约充电模式
+    "charge_order_mode": "Vehicle.Powertrain.ChargingPile.ScheduledCharging.OrderChargingMode",
     "wheel_heat": "Vehicle.Cabin.WheelWarmStatus.WarmOnOff",
     # ===== 冰箱 =====
     "fridge_status": "Vehicle.Cabin.Fridge.ActWorkSts",
