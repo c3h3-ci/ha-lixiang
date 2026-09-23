@@ -183,3 +183,97 @@ class TestFreqEquivalence:
         covered = {s.path for s in sg.SIGNALS.values()}
         missing = set(vss.values()) - covered
         assert not missing, f"signals.py 未覆盖 {len(missing)} 条路径: {list(missing)[:5]}"
+
+
+class TestDescriptionEquivalence:
+    """★ 等价性：从 SIGNALS 生成的 sensor 描述，必须与旧 _mk 表一致。
+
+    这是架构方案 2.4 的关键验证 —— 确保切换零行为变化。
+    """
+
+    @staticmethod
+    def _old_mk_table():
+        """解析 sensor.py 的 _mk 调用。"""
+        import re
+        from pathlib import Path
+        src = (Path(__file__).resolve().parent.parent /
+               "custom_components/lixiang_auto/sensor.py").read_text(encoding="utf-8")
+        out = {}
+        pat = re.compile(r'_mk\(\s*"([^"]+)"\s*,\s*\(([^)]+)\)\s*\)')
+        for m in pat.finditer(src):
+            key = m.group(1)
+            parts = [p.strip().strip("'\"") for p in m.group(2).split(",")]
+            parts = [("" if p == "None" else p) for p in parts]
+            while len(parts) < 6:
+                parts.append("")
+            out[key] = dict(name=parts[0], dclass=parts[1], unit=parts[2],
+                            sclass=parts[3], icon=parts[4], cat=parts[5])
+        return out
+
+    def test_same_key_set(self):
+        """★ 新旧表的 key 集合必须一致
+
+        ⚠️ 注意：signals.py 里有几条 platforms 为空（location/ac_on 等），
+           它们不是 sensor 实体 —— 但 _mk 表也不需要它们。
+           这里比对【会生成实体的】部分。
+        """
+        import re
+        from pathlib import Path
+        src = (Path(__file__).resolve().parent.parent /
+               "custom_components/lixiang_auto/sensor.py").read_text(encoding="utf-8")
+        # _mk 表里被注释掉的（如 window_skylight）不算
+        old = set()
+        for m in re.finditer(r'_mk\(\s*"([^"]+)"', src):
+            # 检查该行是否在注释里
+            line_start = src.rfind("\n", 0, m.start()) + 1
+            if not src[line_start:m.start()].strip().startswith("#"):
+                old.add(m.group(1))
+        new = {s.key for s in sg.specs_for("sensor")}
+        assert old == new, f"多了: {new - old}\n少了: {old - new}"
+
+    def test_names_match(self):
+        old = self._old_mk_table()
+        for key, o in old.items():
+            s = sg.SIGNALS[key]
+            assert o["name"] == s.name, f"{key}: name 旧={o['name']} 新={s.name}"
+
+    def test_icons_match(self):
+        old = self._old_mk_table()
+        for key, o in old.items():
+            s = sg.SIGNALS[key]
+            if o["icon"]:
+                assert o["icon"] == (s.icon or ""), (
+                    f"{key}: icon 旧={o['icon']} 新={s.icon}")
+
+    def test_categories_match(self):
+        old = self._old_mk_table()
+        for key, o in old.items():
+            s = sg.SIGNALS[key]
+            if o["cat"]:
+                assert o["cat"] == (s.category or ""), (
+                    f"{key}: category 旧={o['cat']} 新={s.category}")
+
+    def test_diagnostic_matches(self):
+        """★ diagnostic 判定必须一致（影响默认启用与否）
+
+        旧逻辑（sensor.py:98）：
+          cat in _DIAGNOSTIC_CATS  OR  key in _DIAGNOSTIC_KEYS
+        """
+        import re
+        from pathlib import Path
+        src = (Path(__file__).resolve().parent.parent /
+               "custom_components/lixiang_auto/sensor.py").read_text(encoding="utf-8")
+
+        m = re.search(r"_DIAGNOSTIC_KEYS\s*=\s*frozenset\(\{(.*?)\}\)", src, re.S)
+        diag_keys = set(re.findall(r'"([^"]+)"', m.group(1))) if m else set()
+        m2 = re.search(r"_DIAGNOSTIC_CATS\s*=\s*frozenset\(\{(.*?)\}\)", src, re.S)
+        diag_cats = set(re.findall(r'"([^"]+)"', m2.group(1))) if m2 else set()
+
+        assert diag_cats, "未解析到 _DIAGNOSTIC_CATS（测试自身问题）"
+
+        old = self._old_mk_table()
+        for key, o in old.items():
+            old_diag = (o["cat"] in diag_cats) or (key in diag_keys)
+            s = sg.SIGNALS[key]
+            assert old_diag == s.diagnostic, (
+                f"{key}: diagnostic 旧={old_diag} 新={s.diagnostic}")

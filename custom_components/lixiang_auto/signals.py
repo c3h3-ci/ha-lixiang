@@ -54,6 +54,16 @@ class SignalSpec:
     value_map: dict | None = None      # 值翻译（0/1 → 中文）
 
 
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║  ★★★ 以下 SIGNALS 表由 tools/gen_signals.py 生成 ★★★                 ║
+# ║                                                                      ║
+# ║  ⚠️ 重新生成会【覆盖】这一段 —— 手工修改请放在标记之外！              ║
+# ║                                                                      ║
+# ║  正确做法：                                                          ║
+# ║    1. 生成到临时文件：python3 tools/gen_signals.py <dir> -o /tmp/x.py ║
+# ║    2. 人工 diff 后再合并                                             ║
+# ║    3. 或把手工修正挪到文件末尾的 _OVERRIDES                          ║
+# ╚══════════════════════════════════════════════════════════════════════╝
 SIGNALS: dict[str, SignalSpec] = {
     "ac_defrost": SignalSpec(
         key="ac_defrost",
@@ -76,6 +86,7 @@ SIGNALS: dict[str, SignalSpec] = {
         path="Vehicle.Cabin.AC.FOffStatus",
         name="ac_on",
         freq=Freq.HIGH,
+        platforms=frozenset(),  # ★ 空调开关信号（climate 平台用，不建实体）
     ),
     "ac_set_temp": SignalSpec(
         key="ac_set_temp",
@@ -120,6 +131,7 @@ SIGNALS: dict[str, SignalSpec] = {
         freq=Freq.LOW,
         icon="mdi:fire",
         category="电池",
+        diagnostic=True,
     ),
     "battery_level": SignalSpec(
         key="battery_level",
@@ -235,6 +247,7 @@ SIGNALS: dict[str, SignalSpec] = {
         path="Vehicle.Body.DoorSwitchStatus.ChrgPorLidSts",
         name="charge_port_lid_old",
         freq=Freq.HIGH,
+        platforms=frozenset(),  # ★ 旧版充电口盖路径（仅保留供参考）
     ),
     "charge_power_cltc": SignalSpec(
         key="charge_power_cltc",
@@ -280,6 +293,7 @@ SIGNALS: dict[str, SignalSpec] = {
         freq=Freq.LOW,
         icon="mdi:car-cog",
         category="信息",
+        diagnostic=True,
     ),
     "dcdc_fault_level": SignalSpec(
         key="dcdc_fault_level",
@@ -446,6 +460,7 @@ SIGNALS: dict[str, SignalSpec] = {
         path="Vehicle.Location.CurrentLocationInfo",
         name="location",
         freq=Freq.HIGH,
+        platforms=frozenset(),  # ★ 车辆位置（device_tracker 平台用，不建 sensor）
     ),
     "lock_back_left": SignalSpec(
         key="lock_back_left",
@@ -455,7 +470,7 @@ SIGNALS: dict[str, SignalSpec] = {
         semantics=Semantics.LOCKED,
         device_class="LOCK",
         icon="mdi:car-door-lock",
-        platforms=frozenset({'binary_sensor'}),
+        platforms=frozenset(),  # ★ 车辆位置（device_tracker 平台用，不建 sensor）
     ),  # 有翻译映射
     "lock_back_right": SignalSpec(
         key="lock_back_right",
@@ -531,6 +546,7 @@ SIGNALS: dict[str, SignalSpec] = {
         freq=Freq.MID,
         icon="mdi:power-plug-battery",
         category="电源",
+        diagnostic=True,
     ),  # 有翻译映射
     "low_vol_status": SignalSpec(
         key="low_vol_status",
@@ -590,6 +606,7 @@ SIGNALS: dict[str, SignalSpec] = {
         path="Vehicle.Cabin.CLTC.MileageFinalResult",
         name="mileage_final",
         freq=Freq.HIGH,
+        platforms=frozenset(),  # ★ L6 实测无数据（MileageFinalResult 返回 None）
     ),
     "mirror_left": SignalSpec(
         key="mirror_left",
@@ -703,6 +720,7 @@ SIGNALS: dict[str, SignalSpec] = {
         freq=Freq.HIGH,
         icon="mdi:map-marker-radius",
         category="设置",
+        diagnostic=True,
     ),  # 有翻译映射
     "provision_auth": SignalSpec(
         key="provision_auth",
@@ -744,6 +762,7 @@ SIGNALS: dict[str, SignalSpec] = {
         freq=Freq.HIGH,
         icon="mdi:palette",
         category="设置",
+        diagnostic=True,
     ),  # 有翻译映射
     "scheduled_charge_end": SignalSpec(
         key="scheduled_charge_end",
@@ -1164,13 +1183,44 @@ SIGNALS: dict[str, SignalSpec] = {
         path="Vehicle.Body.WindowPosition.SkylightWindow",
         name="window_skylight",
         freq=Freq.HIGH,
+        platforms=frozenset(),  # ★ L6 实测无数据（SkylightWindow 返回 None）
     ),
 }
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  查询辅助
 # ═══════════════════════════════════════════════════════════════════════════
+def to_sensor_description(spec: SignalSpec):
+    """把 SignalSpec 转成 HA 的 SensorEntityDescription。
+
+    ★ 需要 homeassistant 包 → 仅在 HA 运行时调用。
+    """
+    from homeassistant.components.sensor import SensorEntityDescription
+    from homeassistant.const import EntityCategory
+
+    from .sensor import _DCLASS, _SCLASS, _UNITS
+
+    kw: dict = {"key": spec.key, "name": spec.name}
+    if spec.icon:
+        kw["icon"] = spec.icon
+    if spec.device_class and spec.device_class in _DCLASS:
+        kw["device_class"] = _DCLASS[spec.device_class]
+    if spec.unit and spec.unit in _UNITS:
+        kw["native_unit_of_measurement"] = _UNITS[spec.unit]
+    if spec.state_class and spec.state_class in _SCLASS:
+        kw["state_class"] = _SCLASS[spec.state_class]
+    if spec.diagnostic:
+        kw["entity_category"] = EntityCategory.DIAGNOSTIC
+        kw["entity_registry_enabled_default"] = False
+    return SensorEntityDescription(**kw)
+
+
+def to_sensor_descriptions():
+    """批量转换（已按 platforms 过滤）。"""
+    return [to_sensor_description(s) for s in specs_for("sensor")]
+
+
+
 def specs_for(platform: str, features: dict | None = None) -> list[SignalSpec]:
     """按平台 + 车型功能过滤信号。
 
@@ -1222,5 +1272,6 @@ VSS_PATHS_COMPAT: dict[str, str] = {k: s.path for k, s in SIGNALS.items()}
 __all__ = [
     "Freq", "Semantics", "SignalSpec", "SIGNALS",
     "specs_for", "by_freq", "paths_for", "path_of", "value_map_of",
+    "to_sensor_description", "to_sensor_descriptions",
     "VSS_PATHS_COMPAT",
 ]

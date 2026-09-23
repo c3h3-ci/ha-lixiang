@@ -279,7 +279,16 @@ def main() -> int:
             sclass = s["state_class"]
             icon = s["icon"]
             cat = s["category"]
-            diag = cat in ("OTA", "保养", "诊断") or "diag" in key or key.startswith(("ota_", "maint_"))
+            # ★ diagnostic 判定必须与 sensor.py 的 _DIAGNOSTIC_CATS + _DIAGNOSTIC_KEYS 一致
+            #   （否则新表会漏标，导致诊断类实体默认启用、首屏噪音）
+            DIAG_CATS = {"OTA", "保养", "信息", "设置", "电源"}
+            DIAG_KEYS = {
+                "config_code", "provision_auth", "hu_diag", "ota_version", "ota_short",
+                "ota_state", "ota_status", "ota_progress", "maint_acfilter",
+                "maint_coolfuild", "maint_engine_oil", "maint_brake_oil", "maint_sparkplug",
+                "low_vol_flag", "low_vol_mode", "battery_keep_warm",
+            }
+            diag = (cat in DIAG_CATS) or (key in DIAG_KEYS)
         elif key in binaries:
             b = binaries[key]
             name = b["name"]
