@@ -277,3 +277,75 @@ class TestDescriptionEquivalence:
             s = sg.SIGNALS[key]
             assert old_diag == s.diagnostic, (
                 f"{key}: diagnostic 旧={old_diag} 新={s.diagnostic}")
+
+
+class TestBinaryEquivalence:
+    """★ 等价性：从 SIGNALS 生成的 binary_sensor 描述，必须与旧表一致。
+
+    架构方案 2.5 的关键验证。
+    """
+
+    @staticmethod
+    def _old_binary_table():
+        import re
+        from pathlib import Path
+        src = (Path(__file__).resolve().parent.parent /
+               "custom_components/lixiang_auto/binary_sensor.py").read_text(encoding="utf-8")
+        out = {}
+        pat = re.compile(
+            r'\(BinarySensorEntityDescription\(\s*key="([^"]+)"\s*,\s*name="([^"]+)"'
+            r'(.*?)\)\s*,\s*"([^"]+)"\s*\)', re.S)
+        for m in pat.finditer(src):
+            out[m.group(1)] = {"name": m.group(2), "kind": m.group(4)}
+        return out
+
+    KIND_TO_SEM = {
+        "lock": "LOCKED", "door": "DOOR_OPEN", "trunk": "DOOR_OPEN",
+        "plug": "PLUGGED", "conn": "CONNECTED", "warn": "ALARM",
+        "heat": "SWITCH_ON", "charge_lid": "CHARGE_LID",
+    }
+
+    def test_same_key_set(self):
+        old = set(self._old_binary_table())
+        new = {s.key for s in sg.specs_for("binary_sensor")}
+        assert old == new, f"多了: {new - old}\n少了: {old - new}"
+
+    def test_names_match(self):
+        for key, o in self._old_binary_table().items():
+            assert o["name"] == sg.SIGNALS[key].name, \
+                f"{key}: name 旧={o['name']} 新={sg.SIGNALS[key].name}"
+
+    def test_semantics_match_kind(self):
+        """★ kind 字符串 → Semantics 枚举 的映射必须正确"""
+        for key, o in self._old_binary_table().items():
+            want = self.KIND_TO_SEM.get(o["kind"], "RAW")
+            got = sg.SIGNALS[key].semantics.value.upper()
+            assert want == got, f"{key}: kind={o['kind']} → {got}（应为 {want}）"
+
+    def test_device_class_present(self):
+        """binary_sensor 应有 device_class 或 icon（否则 UI 无标识）"""
+        for s in sg.specs_for("binary_sensor"):
+            assert s.device_class or s.icon, f"{s.key}: 缺 device_class 和 icon"
+
+
+class TestSemanticsEnum:
+    """Semantics 枚举本身的健全性"""
+
+    def test_all_semantics_used(self):
+        """每个枚举值都应有信号在用（避免死枚举）"""
+        used = {s.semantics for s in sg.SIGNALS.values()}
+        # RAW 可能没用到（默认值不算显式使用）
+        defined = set(sg.Semantics) - {sg.Semantics.RAW}
+        unused = defined - used
+        assert not unused, f"未使用的语义: {unused}"
+
+    def test_locked_signals_are_binary(self):
+        """LOCKED 语义的信号应在 binary_sensor 平台"""
+        for s in sg.SIGNALS.values():
+            if s.semantics == sg.Semantics.LOCKED and s.platforms:
+                assert "binary_sensor" in s.platforms, f"{s.key}: LOCKED 但不在 binary_sensor"
+
+    def test_door_open_signals_are_binary(self):
+        for s in sg.SIGNALS.values():
+            if s.semantics == sg.Semantics.DOOR_OPEN and s.platforms:
+                assert "binary_sensor" in s.platforms, f"{s.key}: DOOR_OPEN 但不在 binary_sensor"
