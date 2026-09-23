@@ -1,0 +1,21 @@
+wakeup:
+  name: 唤醒车辆
+  description: 唤醒处于休眠状态的车辆（远程唤醒，耗电较低）。
+  fields:
+    vin:
+      name: VIN
+      description: 目标车辆 VIN（可选，默认使用配置的车辆）
+      required: false
+      selector:
+        text:
+
+refresh:
+  name: 立即刷新
+  description: 立即拉取一次车辆最新状态（不等下一个轮询周期）。
+  fields:
+    vin:
+      name: VIN
+      description: 目标车辆 VIN（可选，默认使用配置的车辆）
+      required: false
+      selector:
+        text:
