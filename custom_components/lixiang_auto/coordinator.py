@@ -8,7 +8,8 @@ from datetime import timedelta
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import scan_interval_seconds, DOMAIN, LOGGER_NAME, SCAN_INTERVAL_SECONDS, VSS_PATHS
+from .const import scan_interval_seconds, DOMAIN, LOGGER_NAME, SCAN_INTERVAL_SECONDS
+from .signals import VSS_PATHS_COMPAT as VSS_PATHS
 
 _LOGGER = logging.getLogger(LOGGER_NAME)
 

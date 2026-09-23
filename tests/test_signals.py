@@ -149,17 +149,9 @@ class TestFreqEquivalence:
         LOW = tuple(re.findall(r'"([^"]+)"', re.search(
             r"LOW_FREQ_PREFIXES\s*=\s*\((.*?)\)", src, re.S).group(1)))
 
-        # 从 const.py 读 VSS_PATHS（旧的主键表）
-        const = Path(__file__).resolve().parent.parent / (
-            "custom_components/lixiang_auto/const.py")
-        import ast
-        tree = ast.parse(const.read_text(encoding="utf-8"))
-        vss = {}
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Assign):
-                for t in node.targets:
-                    if isinstance(t, ast.Name) and t.id == "VSS_PATHS":
-                        vss = ast.literal_eval(node.value)
+        # ★ 2026-09-24：架构 2.8 后 const.VSS_PATHS 改为从 signals 导入，
+        #   不能再解析文件 → 直接用 signals.VSS_PATHS_COMPAT（等价）
+        vss = dict(sg.VSS_PATHS_COMPAT)
 
         hi_old, mid_old, lo_old = self._old_grouping(vss, MID, LOW)
         hi_new = {s.path for s in sg.by_freq(sg.Freq.HIGH)}
@@ -171,23 +163,11 @@ class TestFreqEquivalence:
         assert lo_new == lo_old, f"LOW 分组不一致: {lo_new ^ lo_old}"
 
     def test_all_vss_paths_covered(self):
-        """★ signals.py 必须覆盖 const.py 的所有路径（否则轮询会漏）"""
-        import ast
-        from pathlib import Path
-
-        const = Path(__file__).resolve().parent.parent / (
-            "custom_components/lixiang_auto/const.py")
-        tree = ast.parse(const.read_text(encoding="utf-8"))
-        vss = {}
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Assign):
-                for t in node.targets:
-                    if isinstance(t, ast.Name) and t.id == "VSS_PATHS":
-                        vss = ast.literal_eval(node.value)
-
+        """★ 兼容字典必须与 SIGNALS 一致（架构 2.8 后两者同源）"""
+        assert len(sg.VSS_PATHS_COMPAT) == len(sg.SIGNALS)
         covered = {s.path for s in sg.SIGNALS.values()}
-        missing = set(vss.values()) - covered
-        assert not missing, f"signals.py 未覆盖 {len(missing)} 条路径: {list(missing)[:5]}"
+        missing = set(sg.VSS_PATHS_COMPAT.values()) - covered
+        assert not missing, f"未覆盖 {len(missing)} 条路径"
 
 
 class TestDescriptionEquivalence:

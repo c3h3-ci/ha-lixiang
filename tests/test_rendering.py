@@ -175,11 +175,15 @@ class TestTranslateWired:
     这组测试确保「翻译管线是接通的」。
     """
 
-    def test_vss_paths_imported(self):
-        """VSS_PATHS 必须可用（否则不会触发翻译）"""
+    def test_path_lookup_available(self):
+        """★ 2026-09-24：rendering 改用 signals.path_of()
+
+        原先直接 import VSS_PATHS，架构 2.8 后改为经 signals 查询（消除重复）。
+        """
         import rendering
-        assert hasattr(rendering, "VSS_PATHS")
-        assert len(rendering.VSS_PATHS) > 50, "VSS_PATHS 应包含全部信号路径"
+        assert hasattr(rendering, "path_of"), "rendering 应导入 signals.path_of"
+        # 能查到路径 → 翻译才可能生效
+        assert rendering.path_of("battery_level") == "Vehicle.Powertrain.Battery.ResidueBattery"
 
     def test_translate_imported(self):
         import rendering

@@ -41,7 +41,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .translations import translate
-from .const import CONF_VIN, DOMAIN, LOGGER_NAME, VSS_PATHS
+from .const import CONF_VIN, DOMAIN, LOGGER_NAME
 from .entity_helper import route_id_of_vin
 
 _LOGGER = logging.getLogger(LOGGER_NAME)
