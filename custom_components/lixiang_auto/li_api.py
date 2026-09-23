@@ -26,6 +26,14 @@ import uuid
 
 import requests
 
+from .policy import (
+    POLICY_COMMAND,
+    POLICY_RESULT,
+    POLICY_VSS,
+    TokenExpired,
+    is_token_expired,
+    run_with_retry,
+)
 from .pake_login import (
     APP_VERSION as LOGIN_APP_VERSION,
     BASE_ID,
@@ -139,8 +147,12 @@ class LiCommandError(LiApiError):
         self.push_state = push_state
 
 
-class _TokenExpired(Exception):
-    """VSS token 失效（401），触发上层清除缓存并重试。"""
+class _TokenExpired(TokenExpired):
+    """VSS token 失效（401），触发上层清除缓存并重试。
+
+    ★ 2026-09-23：改为继承 policy.TokenExpired（结构化异常）。
+      名字保留，避免改动所有调用点。
+    """
 
 
 class LiApiClient:
@@ -322,8 +334,9 @@ class LiApiClient:
                 # 400 invalid_path: 整批失败
                 if "400" in str(err) or "invalid_path" in str(err):
                     return False
-                # ★ 401: token 失效 —— 抛特殊异常，由外层重试
-                if "401" in str(err):
+                # ★ 401: token 失效 —— 抛结构化异常，由外层重试
+                #   （用 is_token_expired 兜住「结构化」和「旧字符串」两种）
+                if is_token_expired(err):
                     raise _TokenExpired(str(err)) from err
                 raise
             for it in resp.get("items") or []:
@@ -359,12 +372,12 @@ class LiApiClient:
         ★ 401 自动重试 (2026-09-23): VSS token 缓存可能因服务端提前失效而 401，
           此时清缓存重新换取 token 并重试一次。
         """
-        try:
-            state = self.get_vss_state(paths)
-        except _TokenExpired as err:
-            _LOGGER.info("VSS token 失效(401), 清缓存重试: %s", str(err)[:80])
-            self.invalidate_tokens()
-            state = self.get_vss_state(paths)
+        # ★ 2026-09-23：重试逻辑收敛到 policy.run_with_retry（原先手写 try/except）
+        state = run_with_retry(
+            lambda: self.get_vss_state(paths),
+            on_token_expired=self.invalidate_tokens,
+            policy=POLICY_VSS,
+        )
         return {"vss": state, "polled_at": time.strftime("%F %T")}
 
     # ---------- 车控 (2026-09-22 实测打通, pushState=5 / resultCode=0) ----------
@@ -526,30 +539,28 @@ class LiApiClient:
                 self._get_mesh_token(),
             )
 
-        try:
-            return _do()
-        except LiApiError as err:
-            if "401" not in str(err):
-                raise
-            _LOGGER.info("车控命令 401（token 失效），清缓存重试")
-            self.invalidate_tokens()
-            # 重算 expireAt（时间已推进）
+        def _refresh_body() -> None:
+            """重试前重算 expireAt 与 VAT token（时间已推进）。"""
             body["expireAt"] = int(time.time() * 1000) + je_ms
             body["token"] = self._get_vat_token()
-            return _do()
+
+        # ★ 2026-09-23：重试逻辑收敛到 policy.run_with_retry
+        return run_with_retry(
+            _do,
+            on_token_expired=self.invalidate_tokens,
+            before_retry=_refresh_body,
+            policy=POLICY_COMMAND,
+        )
 
     def get_command_result(self, request_id: str) -> dict:
         """查询单条命令的执行结果（401 自动重试）。"""
-        try:
-            return self._signed_call(
-                "GET", f"{EP_CMD_RESULT}/{request_id}", "", self._get_mesh_token())
-        except LiApiError as err:
-            if "401" not in str(err):
-                raise
-            _LOGGER.info("查询命令结果 401，清缓存重试")
-            self.invalidate_tokens()
-            return self._signed_call(
-                "GET", f"{EP_CMD_RESULT}/{request_id}", "", self._get_mesh_token())
+        # ★ 2026-09-23：重试逻辑收敛到 policy.run_with_retry
+        return run_with_retry(
+            lambda: self._signed_call(
+                "GET", f"{EP_CMD_RESULT}/{request_id}", "", self._get_mesh_token()),
+            on_token_expired=self.invalidate_tokens,
+            policy=POLICY_RESULT,
+        )
 
     def send_command(
         self,
