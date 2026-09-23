@@ -9,6 +9,7 @@ VSS 路径全集见 docs/VSS路径全集_20260922.md
 from __future__ import annotations
 
 import json
+from datetime import datetime
 import logging
 from typing import Any
 
@@ -310,6 +311,43 @@ def _vehicle_info(data: dict) -> dict:
     return {}
 
 
+def _signal_age(ts: str | None) -> str | None:
+    """把上报时间戳转成可读的年龄字符串（如 "5 分钟前" / "3 天前"）。
+
+    ★ 2026-09-23：用于 extra_state_attributes —— 让用户能判断数据是否新鲜，
+      而不改变实体状态（避免"实体突然变 unknown"的负面体验）。
+
+    ts 格式："2026-09-23 20:15:32"（VSS 的 tsFormat）
+    返回 None 表示 ts 无效（空/0/无法解析）。
+    """
+    if not ts:
+        return None
+    t = str(ts).strip()
+    if t in ("", "0"):
+        return None
+    try:
+        dt = datetime.strptime(t[:19], "%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError):
+        return None
+    delta = datetime.now() - dt
+    secs = int(delta.total_seconds())
+    if secs < 0:
+        return "刚刚"
+    if secs < 60:
+        return f"{secs} 秒前"
+    if secs < 3600:
+        return f"{secs // 60} 分钟前"
+    if secs < 86400:
+        return f"{secs // 3600} 小时前"
+    days = secs // 86400
+    if days < 30:
+        return f"{days} 天前"
+    if days < 365:
+        return f"{days // 30} 个月前"
+    return f"{days // 365} 年前"
+
+
+
 class LiCarSensor(CoordinatorEntity, RestoreSensor):
     """理想车传感器 (在线状态 + 实时信号)"""
 
@@ -357,10 +395,27 @@ class LiCarSensor(CoordinatorEntity, RestoreSensor):
         #   因此把 STATE_UNKNOWN 哨兵统一转成 None
         if v == STATE_UNKNOWN or v == "unknown":
             v = None
+        # ★ 2026-09-23 信号新鲜度（ROADMAP P1）：
+        #   VSS 的 ts 能反映信号是否真的在上报：
+        #     ts == "0"  → 从未上报（硬件不存在，如 L6 无冰箱）
+        #     无 ts      → 同 ts==0
+        #   → 这类实体的值即使非 None 也无意义（多为默认 0），
+        #     标为 unavailable 而不是显示误导性的 0。
+        #
+        #   ⚠️ 保守策略：只处理 ts=="0"（确定的"从未上报"）。
+        #      ts 陈旧但仍有效的信号（如 config_code 两年没变）
+        #      不做判定 —— 那些值是真有效的，只是不常变。
+        #      陈旧程度通过 extra_state_attributes 的「上报时间」暴露。
+        sig_now = self._vss() or {}
+        ts = str(sig_now.get("ts") or "").strip()
+        if ts in ("", "0"):
+            # 从未上报：只有历史有效值时才回退（否则 unavailable）
+            if self._last_value is None:
+                return None
+
         if v is not None:
             self._last_value = v
-            sig = self._vss()
-            self._last_ts = (sig or {}).get("ts")
+            self._last_ts = ts
             return v
         # 无新值 → 回退最后有效值
         if self._last_value is not None:
@@ -378,7 +433,12 @@ class LiCarSensor(CoordinatorEntity, RestoreSensor):
                 attrs[label] = vi[key]
         sig = self._vss()
         if sig:
-            attrs["上报时间"] = sig.get("ts")
+            ts = sig.get("ts")
+            attrs["上报时间"] = ts
+            # ★ 2026-09-23：暴露信号年龄（便于判断数据是否新鲜）
+            age = _signal_age(ts)
+            if age is not None:
+                attrs["数据年龄"] = age
         polled = (self.coordinator.data or {}).get("vss_polled_at")
         if polled:
             attrs["轮询时间"] = polled
