@@ -54,6 +54,16 @@ class SignalSpec:
     value_map: dict | None = None      # 值翻译（0/1 → 中文）
 
 
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║  ★★★ 以下 SIGNALS 表由 tools/gen_signals.py 生成 ★★★                 ║
+# ║                                                                      ║
+# ║  ⚠️ 重新生成会【覆盖】这一段 —— 手工修改请放在标记之外！              ║
+# ║                                                                      ║
+# ║  正确做法：                                                          ║
+# ║    1. 生成到临时文件：python3 tools/gen_signals.py <dir> -o /tmp/x.py ║
+# ║    2. 人工 diff 后再合并                                             ║
+# ║    3. 或把手工修正挪到文件末尾的 _OVERRIDES                          ║
+# ╚══════════════════════════════════════════════════════════════════════╝
 SIGNALS: dict[str, SignalSpec] = {
     "ac_defrost": SignalSpec(
         key="ac_defrost",
