@@ -57,6 +57,39 @@
 
 ---
 
+## ⚠️ PR 合并后的规则
+
+**PR 合并后，不要继续在同一个分支上提交！**
+
+```
+❌ 错误做法：
+   ① ./li-pr.sh start feat xxx      → 建分支
+   ② 改代码 + 提交 + 开 PR #11
+   ③ 人合并 PR #11
+   ④ 又在同一分支上提交修复         → ★ 推不进 main！
+      （PR 已关闭，新 commit 无处可去）
+
+✅ 正确做法：
+   ① PR 合并后，立刻切回 main 并 pull
+   ② 从 main 建【新分支】做后续改动
+   ③ 开新 PR
+```
+
+**2026-09-24 实际踩坑**：PR #11 合并后又在原分支提交了 2 个修复，
+导致 main 上是有 bug 的版本（缺 `to_binary_descriptions` 等），
+需要 PR #12 补救。
+
+### 检查方法
+
+```bash
+# 提 PR 前确认：当前分支是否已合并到 main？
+git log --oneline origin/main..HEAD    # 有输出 = 有新 commit（正常）
+git branch -r --merged origin/main | grep "$(git branch --show-current)"
+#   ↑ 有输出 = 该分支已合并 → ★ 应改用新分支！
+```
+
+---
+
 ## 禁止
 
 - ❌ 直接推 `main`（已被 GitHub 拒绝）
