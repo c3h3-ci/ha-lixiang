@@ -69,7 +69,7 @@ class LiBearerTokenMgr:
 
     def __init__(self, main_bearer: str, device_id: str = "") -> None:
         self._main = main_bearer
-        self._device_id = device_id or ""   # 使用者自行配置
+        self._device_id = device_id or "13BFCE38F5774D0DBE21B625AA179AE0"
         self._cache: dict[str, dict] = {}
 
     def _exchange(self, scope: str, audience: str) -> str:
