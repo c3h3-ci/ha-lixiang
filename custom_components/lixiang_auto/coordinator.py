@@ -57,6 +57,13 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
         # 主 route（当前唯一支持的车；多车时扩展为遍历）
         self._route_id: str = ""
 
+        # ★ 2026-09-24 错误处理（ROADMAP P1）:
+        #   连续失败计数 → 分级处理（不打扰 → 告警 → 停止重试）
+        self._fail_count: int = 0
+        self._fail_notified: bool = False
+        self._last_error: str = ""
+        self._unsub_notify = None
+
     # ★ 信号分级（借自 huawei-auto-cloud 的节流策略 + 实测 ts 分析）
     #
     # 实测变化频率（2026-09-23，按信号 ts 新鲜度分层）:
@@ -159,8 +166,32 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
         """
         try:
             data = await self.client.update()
-        except Exception as err:
-            raise UpdateFailed(f"更新失败: {err}") from err
+        except Exception as err:  # noqa: BLE001
+            # ★ 2026-09-24 分级错误处理：
+            #   ①②次失败 → 静默重试（网络抖动很常见）
+            #   ③次起    → 记录 warning
+            #   ⑤次起    → 发 HA 持久通知（用户可见）
+            #   成功后    → 清除通知
+            self._fail_count += 1
+            self._last_error = str(err)[:200]
+            n = self._fail_count
+
+            if n < 3:
+                _LOGGER.debug("轮询失败（第 %d 次，静默重试）: %s", n, self._last_error)
+            elif n < 5:
+                _LOGGER.warning("轮询连续失败 %d 次: %s", n, self._last_error)
+            else:
+                _LOGGER.error("轮询连续失败 %d 次: %s", n, self._last_error)
+                await self._notify_failure(n)
+
+            raise UpdateFailed(f"更新失败（第 {n} 次）: {err}") from err
+
+        # 成功 → 清除失败状态
+        if self._fail_count:
+            _LOGGER.info("轮询恢复正常（此前连续失败 %d 次）", self._fail_count)
+            await self._clear_failure()
+        self._fail_count = 0
+        self._last_error = ""
 
         if self.li_api is not None:
             # ① 在线探测
