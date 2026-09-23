@@ -277,10 +277,16 @@ async def async_setup_entry(
         model="理想 L6", name="Li Auto L6" if vin else "Li Auto",
     )
 
-    # 按车型功能过滤（features 由 __init__.py 探测）
+    # ★ 2026-09-24 接入 signals.py（架构方案 2.4）
+    #   描述表改由 SIGNALS 生成 —— 新增信号只需在 signals.py 加一行。
+    #
+    #   等价性：已验证 signals.py 的 78 个 sensor 与旧 _mk 表
+    #          在 name/icon/category/diagnostic 上完全一致
+    #          （见 tests/test_signals.py::TestDescriptionEquivalence）
     features = (hass.data[DOMAIN][config_entry.entry_id].get("features") or {})
+    from .signals import to_sensor_descriptions
     keep, skipped = [], []
-    for desc in SENSOR_DESCRIPTIONS:
+    for desc in to_sensor_descriptions():
         key = getattr(desc, "key", "") or ""
         feat = _feature_of(key)
         if feat and not features.get(feat, True):

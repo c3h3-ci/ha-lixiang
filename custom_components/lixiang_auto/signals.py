@@ -76,6 +76,7 @@ SIGNALS: dict[str, SignalSpec] = {
         path="Vehicle.Cabin.AC.FOffStatus",
         name="ac_on",
         freq=Freq.HIGH,
+        platforms=frozenset(),  # ★ 空调开关信号（climate 平台用，不建实体）
     ),
     "ac_set_temp": SignalSpec(
         key="ac_set_temp",
@@ -120,6 +121,7 @@ SIGNALS: dict[str, SignalSpec] = {
         freq=Freq.LOW,
         icon="mdi:fire",
         category="电池",
+        diagnostic=True,
     ),
     "battery_level": SignalSpec(
         key="battery_level",
@@ -235,6 +237,7 @@ SIGNALS: dict[str, SignalSpec] = {
         path="Vehicle.Body.DoorSwitchStatus.ChrgPorLidSts",
         name="charge_port_lid_old",
         freq=Freq.HIGH,
+        platforms=frozenset(),  # ★ 旧版充电口盖路径（仅保留供参考）
     ),
     "charge_power_cltc": SignalSpec(
         key="charge_power_cltc",
@@ -280,6 +283,7 @@ SIGNALS: dict[str, SignalSpec] = {
         freq=Freq.LOW,
         icon="mdi:car-cog",
         category="信息",
+        diagnostic=True,
     ),
     "dcdc_fault_level": SignalSpec(
         key="dcdc_fault_level",
@@ -446,6 +450,7 @@ SIGNALS: dict[str, SignalSpec] = {
         path="Vehicle.Location.CurrentLocationInfo",
         name="location",
         freq=Freq.HIGH,
+        platforms=frozenset(),  # ★ 车辆位置（device_tracker 平台用，不建 sensor）
     ),
     "lock_back_left": SignalSpec(
         key="lock_back_left",
@@ -455,7 +460,7 @@ SIGNALS: dict[str, SignalSpec] = {
         semantics=Semantics.LOCKED,
         device_class="LOCK",
         icon="mdi:car-door-lock",
-        platforms=frozenset({'binary_sensor'}),
+        platforms=frozenset(),  # ★ 车辆位置（device_tracker 平台用，不建 sensor）
     ),  # 有翻译映射
     "lock_back_right": SignalSpec(
         key="lock_back_right",
@@ -531,6 +536,7 @@ SIGNALS: dict[str, SignalSpec] = {
         freq=Freq.MID,
         icon="mdi:power-plug-battery",
         category="电源",
+        diagnostic=True,
     ),  # 有翻译映射
     "low_vol_status": SignalSpec(
         key="low_vol_status",
@@ -590,6 +596,7 @@ SIGNALS: dict[str, SignalSpec] = {
         path="Vehicle.Cabin.CLTC.MileageFinalResult",
         name="mileage_final",
         freq=Freq.HIGH,
+        platforms=frozenset(),  # ★ L6 实测无数据（MileageFinalResult 返回 None）
     ),
     "mirror_left": SignalSpec(
         key="mirror_left",
@@ -703,6 +710,7 @@ SIGNALS: dict[str, SignalSpec] = {
         freq=Freq.HIGH,
         icon="mdi:map-marker-radius",
         category="设置",
+        diagnostic=True,
     ),  # 有翻译映射
     "provision_auth": SignalSpec(
         key="provision_auth",
@@ -744,6 +752,7 @@ SIGNALS: dict[str, SignalSpec] = {
         freq=Freq.HIGH,
         icon="mdi:palette",
         category="设置",
+        diagnostic=True,
     ),  # 有翻译映射
     "scheduled_charge_end": SignalSpec(
         key="scheduled_charge_end",
@@ -1164,9 +1173,9 @@ SIGNALS: dict[str, SignalSpec] = {
         path="Vehicle.Body.WindowPosition.SkylightWindow",
         name="window_skylight",
         freq=Freq.HIGH,
+        platforms=frozenset(),  # ★ L6 实测无数据（SkylightWindow 返回 None）
     ),
 }
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  查询辅助
