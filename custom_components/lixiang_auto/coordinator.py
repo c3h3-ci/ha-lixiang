@@ -213,15 +213,23 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
             need_mid = (now - self._mid_freq_ts.get(self._rid(), 0.0)) > self.MID_FREQ_INTERVAL
             need_low = (now - self._low_freq_ts.get(self._rid(), 0.0)) > self.LOW_FREQ_INTERVAL
 
-            # 按前缀分类信号
-            hi_paths, mid_paths, lo_paths = [], [], []
-            for k, p_ in VSS_PATHS.items():
-                if any(k.startswith(pre) for pre in self.LOW_FREQ_PREFIXES):
-                    lo_paths.append(p_)
-                elif any(k.startswith(pre) for pre in self.MID_FREQ_PREFIXES):
-                    mid_paths.append(p_)
-                else:
-                    hi_paths.append(p_)
+            # ★ 2026-09-24 接入 signals.py（架构方案 2.3）
+            #   从「前缀匹配」改为「读 spec.freq」——
+            #   新增信号只需在 signals.py 里声明 freq，无需改这里。
+            #
+            #   等价性：gen_signals.py 已用同样的前缀规则生成 freq，
+            #          所以分组结果应与旧逻辑一致（见 tests/test_signals.py）。
+            from .signals import Freq, by_freq
+            hi_paths = [sp.path for sp in by_freq(Freq.HIGH)]
+            mid_paths = [sp.path for sp in by_freq(Freq.MID)]
+            lo_paths = [sp.path for sp in by_freq(Freq.LOW)]
+
+            # 兜底：signals.py 里没有、但 VSS_PATHS 里有的路径
+            #   （避免新增路径时被漏掉）
+            _covered = set(hi_paths) | set(mid_paths) | set(lo_paths)
+            for _k, _p in VSS_PATHS.items():
+                if _p not in _covered:
+                    hi_paths.append(_p)
 
             try:
                 # 高频：每轮都拉

@@ -107,3 +107,79 @@ class TestKnownSignals:
         """OTA/配置类应是低频"""
         assert sg.SIGNALS["config_code"].freq == sg.Freq.LOW
         assert sg.SIGNALS["ota_version"].freq == sg.Freq.LOW
+
+
+class TestFreqEquivalence:
+    """★ 等价性验证：spec.freq 的分组必须与旧的前缀规则一致。
+
+    这是架构方案建议的关键测试 —— 确保 coordinator 切换零行为变化。
+    """
+
+    @staticmethod
+    def _old_grouping(vss_paths, mid_prefixes, low_prefixes):
+        hi, mid, lo = set(), set(), set()
+        for k, p in vss_paths.items():
+            if any(k.startswith(pre) for pre in low_prefixes):
+                lo.add(p)
+            elif any(k.startswith(pre) for pre in mid_prefixes):
+                mid.add(p)
+            else:
+                hi.add(p)
+        return hi, mid, lo
+
+    def test_grouping_matches_prefix_rules(self):
+        """用真实的旧前缀规则验证分组一致"""
+        import re
+        from pathlib import Path
+
+        # 从 coordinator.py 读真实前缀（若文件不可用则跳过）
+        coord = Path(__file__).resolve().parent.parent / (
+            "custom_components/lixiang_auto/coordinator.py")
+        if not coord.exists():
+            pytest.skip("coordinator.py 不可用")
+
+        src = coord.read_text(encoding="utf-8")
+        MID = tuple(re.findall(r'"([^"]+)"', re.search(
+            r"MID_FREQ_PREFIXES\s*=\s*\((.*?)\)", src, re.S).group(1)))
+        LOW = tuple(re.findall(r'"([^"]+)"', re.search(
+            r"LOW_FREQ_PREFIXES\s*=\s*\((.*?)\)", src, re.S).group(1)))
+
+        # 从 const.py 读 VSS_PATHS（旧的主键表）
+        const = Path(__file__).resolve().parent.parent / (
+            "custom_components/lixiang_auto/const.py")
+        import ast
+        tree = ast.parse(const.read_text(encoding="utf-8"))
+        vss = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                for t in node.targets:
+                    if isinstance(t, ast.Name) and t.id == "VSS_PATHS":
+                        vss = ast.literal_eval(node.value)
+
+        hi_old, mid_old, lo_old = self._old_grouping(vss, MID, LOW)
+        hi_new = {s.path for s in sg.by_freq(sg.Freq.HIGH)}
+        mid_new = {s.path for s in sg.by_freq(sg.Freq.MID)}
+        lo_new = {s.path for s in sg.by_freq(sg.Freq.LOW)}
+
+        assert hi_new == hi_old, f"HIGH 分组不一致: {hi_new ^ hi_old}"
+        assert mid_new == mid_old, f"MID 分组不一致: {mid_new ^ mid_old}"
+        assert lo_new == lo_old, f"LOW 分组不一致: {lo_new ^ lo_old}"
+
+    def test_all_vss_paths_covered(self):
+        """★ signals.py 必须覆盖 const.py 的所有路径（否则轮询会漏）"""
+        import ast
+        from pathlib import Path
+
+        const = Path(__file__).resolve().parent.parent / (
+            "custom_components/lixiang_auto/const.py")
+        tree = ast.parse(const.read_text(encoding="utf-8"))
+        vss = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                for t in node.targets:
+                    if isinstance(t, ast.Name) and t.id == "VSS_PATHS":
+                        vss = ast.literal_eval(node.value)
+
+        covered = {s.path for s in sg.SIGNALS.values()}
+        missing = set(vss.values()) - covered
+        assert not missing, f"signals.py 未覆盖 {len(missing)} 条路径: {list(missing)[:5]}"
