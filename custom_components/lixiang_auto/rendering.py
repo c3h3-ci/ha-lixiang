@@ -39,6 +39,19 @@ from __future__ import annotations
 import json
 from typing import Any
 
+# ★ 2026-09-23 修复：抽 rendering.py 时漏了这两个 import，
+#   导致 translate() 从未被调用（值永远是裸数字）。
+#
+# 兼容两种导入方式（便于单测）：
+#   · HA 运行时：相对导入（包内）
+#   · pytest：绝对导入（conftest 已把集成目录加入 sys.path）
+try:
+    from .const import VSS_PATHS
+    from .translations import translate
+except ImportError:  # pragma: no cover - 单测路径
+    from const import VSS_PATHS  # type: ignore[no-redef]
+    from translations import translate  # type: ignore[no-redef]
+
 # 与 sensor.py 保持一致
 STATE_UNKNOWN = "unknown"
 
@@ -211,7 +224,7 @@ def render_value(
             return STATE_UNKNOWN
     # ★ 统一翻译：0/1 等裸数字 → 中文（translations.py）
     #   App 里没有数字→文案映射表，我们用实测表翻译（见 translations.py 说明）
-    _path = (VSS_PATHS or {}).get(key, "") if "VSS_PATHS" in globals() else ""
+    _path = VSS_PATHS.get(key, "")
     if _path:
         _tr = translate(_path, val)
         if _tr != val:
