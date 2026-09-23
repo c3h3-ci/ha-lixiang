@@ -13,10 +13,16 @@
 ② 改代码（在 HA 测试机）
      /media/duola/devdata/AI-workspace/home-assistant-nas/ha-test/config/custom_components/lixiang_auto/
      
-③ 提交 + 开 PR
+③ ★ 验证（改完必跑，7 项检查）
+     ./li-verify.sh
+     
+     ⚠️ 这步不能省 —— 2026-09-24 曾因跳过它导致 4 次
+        HA 实体大面积不可用（详见 VERIFY.md）
+     
+④ 提交 + 开 PR（内置验证拦截）
      ./li-pr.sh submit
      
-④ 人在 GitHub 上 review + 合并
+⑤ 人在 GitHub 上 review + 合并
      https://github.com/C3H3-AI/ha-lixiang/pulls
 ```
 
