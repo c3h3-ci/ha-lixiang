@@ -412,12 +412,18 @@ class LiCarSensor(CoordinatorEntity, RestoreSensor):
         #      ts 陈旧但仍有效的信号（如 config_code 两年没变）
         #      不做判定 —— 那些值是真有效的，只是不常变。
         #      陈旧程度通过 extra_state_attributes 的「上报时间」暴露。
-        sig_now = self._vss() or {}
-        ts = str(sig_now.get("ts") or "").strip()
-        if ts in ("", "0"):
-            # 从未上报：只有历史有效值时才回退（否则 unavailable）
-            if self._last_value is None:
-                return None
+        sig_now = self._vss()
+        if sig_now is not None:
+            ts = str(sig_now.get("ts") or "").strip()
+            if ts in ("", "0"):
+                # 从未上报：只有历史有效值时才回退（否则 unavailable）
+                if self._last_value is None:
+                    return None
+        else:
+            # ★ 2026-09-24 修复：非 VSS 信号（如 online_status）跳过此判定
+            #   它的 _vss() 恒为 None → ts="" → 会被误判为"从未上报"
+            #   → 永远显示 unknown（实测踩坑：在线状态一直 unknown）
+            ts = ""
 
         if v is not None:
             self._last_value = v

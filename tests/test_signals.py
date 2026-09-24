@@ -16,10 +16,21 @@ class TestSignalTable:
         assert len(sg.SIGNALS) > 100, "信号表应有 100+ 条"
 
     def test_all_have_key_path_name(self):
+        """★ 2026-09-24：虚拟信号（path 为空）例外
+
+        虚拟信号 = 值来自 coordinator.data 的其他字段，不走 VSS 轮询。
+        目前只有 online_status（值来自 basics.vehicleStatus）。
+        """
         for key, spec in sg.SIGNALS.items():
             assert spec.key == key, f"{key}: key 字段与字典键不一致"
-            assert spec.path.startswith("Vehicle."), f"{key}: path 格式错误 {spec.path}"
             assert spec.name, f"{key}: 缺 name"
+            if spec.path:
+                assert spec.path.startswith("Vehicle."), \
+                    f"{key}: path 格式错误 {spec.path}"
+            else:
+                # 虚拟信号必须显式声明（防止误加）
+                assert key in ("online_status",), \
+                    f"{key}: 空路径但不是已知虚拟信号"
 
     def test_paths_unique(self):
         """同一 VSS 路径不应被两个 key 复用（除兼容项）"""
@@ -54,15 +65,24 @@ class TestQueries:
         assert sg.specs_for("nonexistent") == []
 
     def test_by_freq(self):
+        """★ 2026-09-24：by_freq 排除虚拟信号（path 为空）"""
         hi = sg.by_freq(sg.Freq.HIGH)
         mid = sg.by_freq(sg.Freq.MID)
         low = sg.by_freq(sg.Freq.LOW)
-        assert len(hi) + len(mid) + len(low) == len(sg.SIGNALS)
+        vss_signals = [s for s in sg.SIGNALS.values() if s.path]
+        assert len(hi) + len(mid) + len(low) == len(vss_signals)
+        # 虚拟信号不应出现在任何档位
+        all_freq = {s.key for s in hi + mid + low}
+        for key, spec in sg.SIGNALS.items():
+            if not spec.path:
+                assert key not in all_freq, f"{key} 是虚拟信号，不该在轮询列表里"
 
     def test_paths_for(self):
+        """"★ 2026-09-24：paths_for 排除空路径（虚拟信号）"""
         all_paths = sg.paths_for()
         hi_paths = sg.paths_for(sg.Freq.HIGH)
-        assert len(all_paths) == len(sg.SIGNALS)
+        assert "" not in all_paths, "虚拟信号（空路径）不该进轮询列表"
+        assert len(all_paths) == len([s for s in sg.SIGNALS.values() if s.path])
         assert len(hi_paths) < len(all_paths)
 
     def test_path_of(self):
@@ -72,8 +92,9 @@ class TestQueries:
         assert sg.path_of("nonexistent_key") == ""
 
     def test_compat_vss_paths(self):
-        """兼容字典应与 SIGNALS 一致"""
-        assert len(sg.VSS_PATHS_COMPAT) == len(sg.SIGNALS)
+        """兼容字典 = 有路径的信号（排除虚拟信号）"""
+        with_path = [s for s in sg.SIGNALS.values() if s.path]
+        assert len(sg.VSS_PATHS_COMPAT) == len(with_path)
         assert sg.VSS_PATHS_COMPAT["battery_level"] == sg.path_of("battery_level")
 
 
@@ -234,7 +255,10 @@ class TestDescriptionEquivalence:
             if not src[line_start:m.start()].strip().startswith("#"):
                 old.add(m.group(1))
         new = {s.key for s in sg.specs_for("sensor")}
-        assert old == new, f"多了: {new - old}\n少了: {old - new}"
+        # ★ online_status 是手写的 EntityDescription（不在 _mk 表里），
+        #   但已在 signals.py 声明 → 差异只剩它
+        assert (old | {"online_status"}) == new, (
+            f"多了: {new - old - {'online_status'}}\n少了: {old - new}")
 
     def test_names_match(self):
         old = self._old_mk_table()
@@ -412,3 +436,41 @@ class TestSemanticsIntegrity:
                    "to_binary_description", "to_binary_descriptions",
                    "specs_for", "by_freq", "paths_for"):
             assert hasattr(sg, fn), f"signals.py 缺少 {fn}()"
+
+
+class TestVirtualSignals:
+    """★ 虚拟信号（非 VSS）—— 值来自 coordinator.data 的其他字段
+
+    背景（2026-09-24）：
+      online_status 的值来自 basics.vehicleStatus，不是 VSS 信号。
+      gen_signals.py 从 VSS_PATHS 生成 → 漏了它
+      → sensor 平台不再创建该实体 → 旧实体残留且永远 unknown
+    """
+
+    def test_online_status_exists(self):
+        """★ online_status 必须在 SIGNALS 里（否则实体不会被创建/更新）"""
+        assert "online_status" in sg.SIGNALS, (
+            "online_status 是虚拟信号，必须手工加进 signals.py")
+
+    def test_virtual_signals_have_empty_path(self):
+        """虚拟信号的 path 应为空"""
+        s = sg.SIGNALS["online_status"]
+        assert s.path == "", "虚拟信号不应有 VSS 路径"
+        assert s.name == "在线状态"
+
+    def test_virtual_signals_excluded_from_polling(self):
+        """★ 虚拟信号不能进轮询列表（否则会请求空路径）"""
+        assert "" not in sg.paths_for()
+        freq_keys = {x.key for x in (sg.by_freq(sg.Freq.HIGH)
+                                     + sg.by_freq(sg.Freq.MID)
+                                     + sg.by_freq(sg.Freq.LOW))}
+        assert "online_status" not in freq_keys
+
+    def test_virtual_signals_excluded_from_compat(self):
+        """★ 兼容字典也要排除（coordinator 用它做反转映射）"""
+        assert "online_status" not in sg.VSS_PATHS_COMPAT
+        assert "" not in sg.VSS_PATHS_COMPAT.values()
+
+    def test_virtual_signal_is_sensor(self):
+        """虚拟信号应创建为 sensor 实体"""
+        assert "sensor" in sg.SIGNALS["online_status"].platforms

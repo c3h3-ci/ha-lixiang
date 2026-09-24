@@ -266,13 +266,42 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
                     if path in vss["vss"]
                 }
                 data["vss_polled_at"] = vss.get("polled_at")
-                # basics 缺失时用 VSS 在线信号兜底
-                if "vehicle_status" not in data and "online_5g" in data["vss"]:
-                    data["vehicle_status"] = (
-                        1 if str(data["vss"]["online_5g"]["value"]).lower() == "true" else 0
-                    )
+                # ★ 2026-09-24 修复：basics 缺失/为空时用 VSS 连接信号兜底
+                #
+                #   bug：原条件是 `"vehicle_status" not in data`，
+                #        但 basics 实测返回 None（saos 接口对该账号返回 null）
+                #        → 键不存在 → 应该兜底才对
+                #        ⚠️ 但 basics 为 None 时 data["vehicle_status"] 根本没被写入
+                #           （见 client.py：只有 basics 是 dict 时才写），
+                #           所以这个条件实际是生效的 —— 真正的问题是
+                #           它在 `if self.li_api is not None:` 的 try 块内，
+                #           而 vehicle_status 的兜底需要 VSS 数据已就绪。
+                #
+                #   现在的实现：值缺失（None 或键不存在）都兜底，
+                #   并用 5G → XCU → hu-f 依次尝试。
+                if data.get("vehicle_status") is None:
+                    for _k in ("online_5g", "online_xcu", "online_huf"):
+                        _sig = data["vss"].get(_k)
+                        if _sig and _sig.get("value") is not None:
+                            _v = str(_sig["value"]).strip().lower()
+                            data["vehicle_status"] = 1 if _v in ("true", "1") else 0
+                            _LOGGER.debug(
+                                "vehicleStatus 缺失，用 %s 兜底 → %s",
+                                _k, data["vehicle_status"])
+                            break
+
+                # ★ 补充：即使 VSS 轮询失败，也尝试从 data["vss"] 的旧数据兜底
+                if data.get("vehicle_status") is None:
+                    for _k in ("online_5g", "online_xcu", "online_huf"):
+                        _sig = (data.get("vss") or {}).get(_k)
+                        if _sig and _sig.get("value") is not None:
+                            _v = str(_sig["value"]).strip().lower()
+                            data["vehicle_status"] = 1 if _v in ("true", "1") else 0
+                            break
             except Exception as err:  # noqa: BLE001
                 # 实时信号失败不拖垮静态数据 (也避免反复触发登录)
                 _LOGGER.warning("VSS 实时信号轮询失败: %s", err)
 
+        _LOGGER.warning("★ 轮询结束: vehicle_status=%r  vss条数=%d",
+                        data.get("vehicle_status"), len(data.get("vss") or {}))
         return data
