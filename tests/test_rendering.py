@@ -251,3 +251,80 @@ class TestSignalAge:
         from datetime import datetime, timedelta
         t = (datetime.now() - timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M:%S")
         assert self._age(t) == "30 分钟前"
+
+
+class TestJsonSignalRendering:
+    """★ 2026-09-24 新增：复杂 JSON 信号 → 可读值
+
+    用户反馈："离车模式好像有问题"（显示一坨 JSON）
+    """
+
+    def test_xmode_on(self):
+        val = json.dumps({
+            "mainSwitch": True,
+            "moveOffDatas": {
+                "1721880052498": {
+                    "acSwitch": True, "startTime": "07:00",
+                    "temp": 22.0, "dayDesc": "法定工作日",
+                }
+            },
+        })
+        r = render_value("xmode", val, {"value": val, "ts": "1"}, {})
+        assert "已开启" in str(r)
+        assert "07:00" in str(r)
+        assert "22" in str(r)
+
+    def test_xmode_off(self):
+        val = json.dumps({"mainSwitch": False, "moveOffDatas": {}})
+        r = render_value("xmode", val, {"value": val, "ts": "1"}, {})
+        assert r == "已关闭"
+
+    def test_xmode_none(self):
+        assert render_value("xmode", None, {"value": None, "ts": "1"}, {}) is None
+
+    def test_xmode_bad_json(self):
+        r = render_value("xmode", "not json", {"value": "not json", "ts": "1"}, {})
+        assert r == STATE_UNKNOWN
+
+    def test_fridge_reserve_off(self):
+        val = json.dumps({"reserveSwitch": False, "startTime": "05:00"})
+        r = render_value("fridge_reserve", val, {"value": val, "ts": "1"}, {})
+        assert r == "已关闭"
+
+    def test_fridge_reserve_on(self):
+        val = json.dumps({
+            "reserveSwitch": True, "startTime": "05:00",
+            "temp": 5, "dayDesc": "每天",
+        })
+        r = render_value("fridge_reserve", val, {"value": val, "ts": "1"}, {})
+        assert "已开启" in str(r)
+        assert "05:00" in str(r)
+
+    def test_vehicle_accounts_count(self):
+        val = json.dumps({"acc1": {"role": "owner"}, "acc2": {"role": "family"}})
+        r = render_value("vehicle_accounts", val, {"value": val, "ts": "1"}, {})
+        assert r == "2 个账号"
+
+    def test_provision_finish(self):
+        val = json.dumps({"accountId": "123"})
+        r = render_value("provision_finish", val, {"value": val, "ts": "1"}, {})
+        assert r == "已激活"
+
+    def test_charge_calibration(self):
+        val = json.dumps({"id": "Vehicle.VehInfo"})
+        r = render_value("charge_calibration", val, {"value": val, "ts": "1"}, {})
+        assert r == "已启用"
+
+    def test_no_raw_json_leak(self):
+        """★ 关键：这些信号不应把原始 JSON 泄漏到 state"""
+        cases = [
+            ("xmode", {"mainSwitch": True, "moveOffDatas": {}}),
+            ("fridge_reserve", {"reserveSwitch": True}),
+            ("vehicle_accounts", {"a": {}}),
+            ("provision_finish", {"accountId": "x"}),
+        ]
+        for key, obj in cases:
+            val = json.dumps(obj)
+            r = render_value(key, val, {"value": val, "ts": "1"}, {})
+            assert not str(r).startswith("{"), (
+                f"{key} 仍返回原始 JSON: {str(r)[:60]}")
