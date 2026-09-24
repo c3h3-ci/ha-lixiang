@@ -66,6 +66,12 @@ VAT_SCOPE_COMMANDS = (
     "ACSmartControl", "FrgControl", "Auth", "LockControl", "PlgControl",
     "Search", "WdwControl", "ACFirstControl", "ADCtrl", "ADInit",
     "fTkC", "rmCtrl", "cpCtrl", "ssCtrl",
+    # ★ 2026-09-24 新增（用户反馈 + 实测打通）：
+    #   充电启停需要这个 scope。不加 → remote_charge_control 返回 2009。
+    #   依据：App 的 jobService = 'mob.metaJobService.remoteChargingControl'
+    #        → VAT scope 名 = remoteVeh + "ChargingControl"
+    #   实测：加入后 pushState/resultCode 不再报错，返回 requestId。
+    "ChargingControl",
 )
 
 # 车控端点
