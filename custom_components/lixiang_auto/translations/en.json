@@ -19,10 +19,9 @@
       },
       "browser": {
         "title": "Li Auto · First-time login verification",
-        "description": "### Complete the SMS verification on the Li Auto login page\n\nClick the link below and finish the login in a new window (**drag the slider + enter the SMS code**):\n\n## 👉 [Open the Li Auto login page]({login_url})\n\n---\n\n**On the Li Auto page:**\n\n**①** Enter your **phone number + password**\n\n**②** Tap \"get code\" → **drag the slider**\n\n**③** Enter the **SMS code** you receive → tap \"log in / register\"\n\n**④** Once you see the login succeeded, **come back and press Submit below**\n\n---\n\n> ⏱️ **Important: wait about 1 minute before pressing Submit**\n>\n> Li Auto's servers need a short while to propagate \"this device is verified\".\n> If you submit immediately after logging in, it may not be detected yet —\n> **wait ~1 minute, then press Submit**.\n\n> 💡 **On the Home Assistant side, all you need to do is press Submit**\n>\n> Home Assistant then signs in using the same device identity. Once that\n> succeeds, this device is marked as **trusted** by Li Auto's servers — no more\n> SMS verification from then on.\n\n> ⚠️ If Submit still does nothing after waiting, wait another 30 seconds and\n> try once more.\n\n---\n\nLink not working? Try the [fallback link]({login_url_alt}), or use the helper\npage (shows live status):\n\n{helper_url}\n\nDevice ID: `{device}`",
+        "description": "Complete the SMS verification on the Li Auto login page.\n\n## 👉 [Open the Li Auto login page]({login_url})\n\n---\n\n**①** Enter your phone number and accept the terms\n\n**②** Tap \"get code\" → drag the slider\n\n**③** Enter the SMS code → tap \"log in / register\"\n\n**④** Come back and press Submit (wait ~30 seconds for it to succeed)\n\n---\n\n> 💡 After you submit, Home Assistant signs in with the same device identity.\n> Once that succeeds, this device is marked as trusted and no longer needs SMS\n> verification.",
         "data": {
-          "ha_base_url": "Home Assistant URL (auto-detected, editable)",
-          "recheck": "I have completed the login — check again"
+          "recheck": "I have logged in — submit"
         }
       },
       "sms": {

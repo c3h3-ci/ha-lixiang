@@ -347,12 +347,38 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._login_token = tok
 
         # ② 后台检测：用 device_id + 密码 试登录
-        try:
-            ok = await self.hass.async_add_executor_job(
-                try_login, phone, password, device_id)
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("检测登录异常: %s", err)
-            ok = False
+        #    ★ 2026-09-24 体验优化：
+        #      理想服务器同步"设备已受信任"需要几十秒。
+        #      原来只检测一次 → 用户必须自己等 30 秒再点提交。
+        #      现在改为【自动重试】：最多等 ~40 秒，每 5 秒试一次，
+        #      用户点一次提交即可。
+        import asyncio as _asyncio
+
+        _RETRY_TOTAL = 8      # 最多 8 次
+        _RETRY_GAP = 5        # 间隔 5 秒 → 共 ~40 秒
+
+        ok = False
+        for _i in range(_RETRY_TOTAL):
+            try:
+                ok = await self.hass.async_add_executor_job(
+                    try_login, phone, password, device_id)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("检测登录异常: %s", err)
+                ok = False
+
+            if ok:
+                break
+
+            if _i < _RETRY_TOTAL - 1:
+                _LOGGER.info(
+                    "设备尚未受信任，%d 秒后重试（第 %d/%d 次）",
+                    _RETRY_GAP, _i + 1, _RETRY_TOTAL)
+                await _asyncio.sleep(_RETRY_GAP)
+
+        if not ok:
+            _LOGGER.info(
+                "等待 %d 秒后仍未检测到受信任（device_id=%s）",
+                _RETRY_TOTAL * _RETRY_GAP, device_id[:12])
 
         if ok:
             # ★ 设备已受信任 → 完成登录
@@ -374,13 +400,12 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # ③ 还没受信任 → 显示辅助页面 + 让用户确认后重新检测
         #    ★ 用户可填自己的 HA 访问地址（内网/外网不同）
-        default_base = self._base_url()
-        cur_base = getattr(self, "_user_base_url", None) or default_base
-        self._user_base_url = cur_base
+        # ★ 2026-09-24 简化（用户要求）：
+        #   去掉「HA 访问地址」输入框 —— 它只用于生成辅助页链接，
+        #   而现在直接给理想登录链接，该字段已无用途。
         return self.async_show_form(
             step_id="browser",
             data_schema=vol.Schema({
-                vol.Optional("ha_base_url", default=cur_base): str,
                 vol.Optional("recheck", default=True): bool,
             }),
             description_placeholders=self._browser_ph(tok, device_id),
@@ -507,29 +532,20 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "device_id": device_id,
         })
 
-        # ② 辅助页链接（可选，带状态反馈）
-        helper_urls: list[str] = []
-        for b in self._all_base_urls():
-            helper_urls.append(f"{b}/lixiang-login?token={tok}")
-        helper_first = helper_urls[0] if helper_urls else ""
-
-        # ③ 用户填的 HA 访问地址
-        cur_base = getattr(self, "_user_base_url", None) or self._base_url()
-
+        # ★ 2026-09-24 简化（用户要求"备用这些都删掉，简洁点"）：
+        #   只保留理想登录链接；辅助页/备选地址/设备ID 不再显示。
+        #   （占位符仍全部提供，避免旧模板引用时报错）
         return {
-            # ★ 主链接：直接到理想登录页（含 device_id）
             "login_url": login_url,
             "login_url_alt": alt_login_url,
-            # 辅助页（可选）
-            "helper_url": helper_first,
-            "helper_alt": "\n".join(f"· {u}" for u in helper_urls),
-            # 兼容旧占位符（模板可能还在用）
-            "url": helper_first,
-            "url_abs": helper_first,
-            "url_alt": "\n".join(f"· {u}" for u in helper_urls),
             "token": tok,
-            "base_url": cur_base,
-            "device": device_id[:16],
+            "device": device_id[:16] if device_id else "",
+            "base_url": "",
+            "helper_url": "",
+            "helper_alt": "",
+            "url": "",
+            "url_abs": "",
+            "url_alt": "",
         }
 
 
