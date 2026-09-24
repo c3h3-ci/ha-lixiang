@@ -271,8 +271,43 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
         attrs: dict = {
             "cmd_key": CMD_AC,
             "control_type": self._control_type,
-            "level_range": "0(关)/1-3(档位)",
         }
+        if self._control_type == "__CHARGING__":
+            # ★ 2026-09-24 充电开关特例：
+            #   充电启停有【前置条件】，不满足时点了没反应是正常的。
+            #   这里显式暴露条件，避免用户困惑。
+            vss = (self.coordinator.data or {}).get("vss", {})
+
+            def _num(k: str):
+                sig = vss.get(k) or {}
+                v = sig.get("value")
+                try:
+                    return int(float(v)) if v is not None else None
+                except (TypeError, ValueError):
+                    return None
+
+            gun_ac = _num("charge_gun_ac")      # 2 = 交流枪已插
+            soc = _num("battery_level")
+            cs = _num("charge_status")
+
+            attrs.update({
+                "cmd_key": "remote_charge_control",
+                "control_type": "3 (充电启停)",
+                "gun_plugged": gun_ac == 2,
+                "battery_level": soc,
+                "charge_status_raw": cs,
+                "requirement": "需插枪 + 电量未满 + 车辆在线",
+            })
+            # 条件不满足时给出明确原因
+            reasons = []
+            if gun_ac != 2:
+                reasons.append("未插充电枪")
+            if soc is not None and soc >= 100:
+                reasons.append("电量已满")
+            if reasons:
+                attrs["cannot_start_reason"] = "、".join(reasons) + "，开启充电不会有实际效果"
+        else:
+            attrs["level_range"] = "0(关)/1-3(档位)"
         if self._last_result is not None:
             attrs["last_command_result"] = self._last_result
         return attrs
