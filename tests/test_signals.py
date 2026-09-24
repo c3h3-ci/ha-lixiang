@@ -351,6 +351,11 @@ class TestDescriptionEquivalence:
                 assert o["cat"] == (s.category or ""), (
                     f"{key}: category 旧={o['cat']} 新={s.category}")
 
+    # ★ 2026-09-24：泊车状态/进度改为诊断类
+    #   原因：ParkStatus 服务端从不返回；FSDBootProgress 值恒为 0。
+    #   泊车状态在 App 里走【实时事件通道】，VSS 拿不到。
+    NEWLY_DIAGNOSTIC = {"park_status", "park_fsd_progress"}
+
     def test_diagnostic_matches(self):
         """★ diagnostic 判定必须一致（影响默认启用与否）
 
@@ -371,6 +376,8 @@ class TestDescriptionEquivalence:
 
         old = self._old_mk_table()
         for key, o in old.items():
+            if key in self.NEWLY_DIAGNOSTIC:
+                continue      # 已按新规则改为诊断类（见 NEWLY_DIAGNOSTIC）
             old_diag = (o["cat"] in diag_cats) or (key in diag_keys)
             s = sg.SIGNALS[key]
             assert old_diag == s.diagnostic, (
