@@ -28,7 +28,7 @@
 >
 > ### 反馈
 >
-> 遇到问题请提 [Issue](https://github.com/c3h3-bi/ha-lixiang/issues)，
+> 遇到问题请提 [Issue](https://github.com/c3h3-ci/ha-lixiang/issues)，
 > 并附上「设备 → 下载诊断」导出的 JSON（已脱敏）。
 >
 > ### 版本路线
