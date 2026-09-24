@@ -367,11 +367,14 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """
         try:
             from homeassistant.helpers.network import get_url
-            url = get_url(self.hass, prefer_external=True, allow_ip=True)
+            # ★ 2026-09-24 修正：不再硬编码 prefer_external=True
+            #   用户可能从【内网】访问，硬给外网地址会不匹配。
+            #   交给 HA 按 api.use_ssl 等条件自行判断。
+            url = get_url(self.hass, allow_ip=True)
             if url:
                 return str(url).rstrip("/")
         except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("get_url(prefer_external) 失败: %s", err)
+            _LOGGER.debug("get_url 失败: %s", err)
 
         for u in (
             getattr(self.hass.config, "external_url", None),
@@ -443,16 +446,16 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     for b in self._all_base_urls()]
 
         if abs_urls:
-            alt_lines = ["如果上面打不开，试这些绝对地址："]
+            alt_lines = []
             for u in abs_urls:
-                tag = ""
-                if any(x in u for x in ("192.168.", "10.", "127.0.0.1",
-                                        "localhost")):
-                    tag = "   ← 仅在家里 Wi-Fi 下可用"
+                is_lan = any(x in u for x in ("192.168.", "10.", "127.0.0.1",
+                                              "localhost"))
+                tag = "   ← 仅在家里 Wi-Fi 下可用（外网请用上面那条）" if is_lan \
+                    else "   ← 外网地址（内网也能用）"
                 alt_lines.append(f"· {u}{tag}")
             alt = "\n".join(alt_lines)
         else:
-            alt = "（无法推断地址，请手动打开：你的 HA 地址 + /lixiang-login?token=…）"
+            alt = "（无法自动推断地址，请手动打开：你的 HA 地址 + /lixiang-login?token=…）"
 
         cur_base = getattr(self, "_user_base_url", None) or self._base_url()
 
