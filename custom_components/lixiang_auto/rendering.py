@@ -232,6 +232,26 @@ def render_value(
             return "正常"
         except (ValueError, TypeError, AttributeError):
             return "未知"
+    if key == "travel_status":
+        # ★ 2026-09-24 新增：档位/行驶状态
+        #   来源：App 的 parseTravelStatus()（VehicleBaseState.smali:716）
+        #     源码逻辑：gear == "P" → 4 ；否则 → 1
+        #   含义：
+        #     4 = P 档（已驻车）
+        #     1 = 其他档位（行驶中）
+        #   这是 App 首页「已驻车 / 行驶中」的数据源（VSS 可拿到）。
+        _GEAR = {
+            4: "已驻车（P 档）",
+            1: "行驶中",
+            0: "未知",
+            2: "行驶中",
+            3: "行驶中",
+        }
+        try:
+            return _GEAR.get(int(float(val)), f"档位 {val}")
+        except (TypeError, ValueError):
+            return STATE_UNKNOWN
+
     if key == "trip_total":
         try:
             o = json.loads(val) if isinstance(val, str) else val

@@ -373,3 +373,40 @@ class TestMaintenanceSignals:
         val = json.dumps({"maintainLeftMileage": 3000})
         r = render_value("maint_engine_oil", val, {"value": val, "ts": "1"}, {})
         assert "剩余 3000 km" in str(r)
+
+
+class TestTravelStatus:
+    """★ 行驶状态/驻车（2026-09-24 从 App parseTravelStatus 破解）
+
+    源码逻辑（VehicleBaseState.smali:716）：
+      gear == "P" → vehicleGearStatus = 4
+      else        → vehicleGearStatus = 1
+
+    实测：Vehicle.Cabin.TravelStatus = 4（P 档，驻车）
+    这是 App 首页「已驻车 / 行驶中」的数据源。
+    """
+
+    def test_park_p(self):
+        """★ 4 = P 档 = 已驻车"""
+        r = render_value("travel_status", 4, {"value": 4}, {})
+        assert "驻车" in str(r), f"值 4 应渲染为已驻车，实际 {r}"
+
+    def test_driving(self):
+        """★ 1 = 其他档 = 行驶中"""
+        r = render_value("travel_status", 1, {"value": 1}, {})
+        assert "行驶" in str(r), f"值 1 应渲染为行驶中，实际 {r}"
+
+    def test_unknown_zero(self):
+        """0 = 未知"""
+        r = render_value("travel_status", 0, {"value": 0}, {})
+        assert "未知" in str(r)
+
+    def test_string_value(self):
+        """字符串值也能处理（VSS 有时返回 str）"""
+        r = render_value("travel_status", "4", {"value": "4"}, {})
+        assert "驻车" in str(r), f"字符串 '4' 也应识别，实际 {r}"
+
+    def test_bad_value(self):
+        """异常值不应抛错"""
+        r = render_value("travel_status", "bad", {"value": "bad"}, {})
+        assert r is not None
