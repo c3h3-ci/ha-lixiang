@@ -67,16 +67,34 @@ _LOGGER = logging.getLogger(LOGGER_NAME)
 # App 的硬编码功能表（从 smali 提取）
 # key = 车型代号, value = {功能名: 是否支持}
 KNOWN_FEATURES: dict[str, dict[str, bool]] = {
-    "M01": {                      # L6（实测自 LXM01StateDelegate）
+    # ⚠️ 本表必须【覆盖 FEATURE_PROBES 的所有功能】！
+    #    否则未覆盖的项会继续走 VSS 探测 ——
+    #    而 VSS 探测有 7 天新鲜度判据，会把"存在但久未使用"的功能误判为不支持
+    #    （实测：方向盘加热被误判过）
+    "M01": {                      # L6（实测自 LXM01StateDelegate + 实车验证）
+        # ---- App 硬编码的（来自 LXM01StateDelegate）----
         "牌显": True,
         "冰箱": False,
         "前备箱": False,
         "旋转座椅": False,
         "自动驾驶": False,
-        # ★ 2026-09-24 新增：L6 是【五座】SUV（前排 2 + 二排 3，无三排）
+        # ---- 2026-09-24 实车验证补充 ----
+        # L6 是【五座】SUV（前排 2 + 二排 3，无三排）
         #   服务端对不存在的三排硬件也返回 value=0 + 有效 ts，
         #   所以不能靠信号探测，必须靠车型判断。
         "三排座椅": False,
+        "二排座椅": True,         # 五座车的二排（3 座）
+        "座椅加热": True,         # 前后排都有
+        "方向盘加热": True,       # ★ 实车确认有（曾因 VSS 探测新鲜度误判）
+        "哨兵模式": True,
+        "远程拍照": True,         # 360 泊车影像
+        # L6 无【电动】遮阳帘
+        #   证据：① App 逻辑引用数 0（无消费者）
+        #        ② L6 官方配置无"电动遮阳帘"（只有手动卡扣式天幕帘）
+        "遮阳帘": False,
+        # L6 Pro 无空气悬架 / 无电动尾翼 / 无旋转座椅
+        "空气悬架": False,
+        "电动尾翼": False,
     },
 }
 
@@ -144,6 +162,11 @@ FEATURE_PROBES: dict[str, list[str]] = {
         "Vehicle.Body.RearSpoiler.Status",
     ],
     # 注: Vehicle.360Svm.ParkPhoto.State (泊车拍照) 是通用功能, 不在此探测
+    # ★ 2026-09-24 新增：遮阳帘（L9/MEGA 有电动遮阳帘，L6/L7 无）
+    "遮阳帘": [
+        "Vehicle.Body.SunshadeStatus.FrtSunshdSwSts",
+        "Vehicle.Body.SunshadeStatus.RrSunshdSwSts",
+    ],
     # ★ 2026-09-24 修正：原先探测路径用错
     #   错误路径（L6 无数据）：
     #     Vehicle.Camera.Photo.Status

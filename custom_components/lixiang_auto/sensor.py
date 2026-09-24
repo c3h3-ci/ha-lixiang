@@ -256,6 +256,8 @@ FEATURE_BY_KEY_PREFIX: dict[str, str] = {
     "wheel_heat": "方向盘加热",
     "spoiler": "电动尾翼",
     "suspension": "空气悬架",
+    # ★ 2026-09-24 新增：遮阳帘（L9/MEGA 有电动遮阳帘，L6/L7 无）
+    "sunshade": "遮阳帘",
 }
 
 

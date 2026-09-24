@@ -100,6 +100,39 @@ class TestKnownFeatures:
         k = _extract_dict("features.py", "KNOWN_FEATURES")
         assert k["M01"].get("前备箱") is False
 
+    def test_l6_has_no_electric_sunshade(self):
+        """★ L6 无【电动】遮阳帘（只有手动卡扣式天幕帘）
+
+        证据：① App 逻辑引用数 0（无消费者）
+              ② L6 官方配置无"电动遮阳帘"
+        """
+        k = _extract_dict("features.py", "KNOWN_FEATURES")
+        assert k["M01"].get("遮阳帘") is False
+
+    def test_l6_has_steering_wheel_heat(self):
+        """★ L6 有方向盘加热（曾因 VSS 探测 7 天新鲜度判据被误判为不支持）"""
+        k = _extract_dict("features.py", "KNOWN_FEATURES")
+        assert k["M01"].get("方向盘加热") is True
+
+
+class TestKnownFeaturesCoversProbes:
+    """★ KNOWN_FEATURES 必须覆盖所有 FEATURE_PROBES 项
+
+    否则未覆盖项会继续走 VSS 探测，而 VSS 探测有 7 天新鲜度判据，
+    会把"存在但久未使用"的功能误判为不支持（实测：方向盘加热）。
+    """
+
+    def test_full_coverage(self):
+        known = _extract_dict("features.py", "KNOWN_FEATURES")
+        probes = _extract_dict("features.py", "FEATURE_PROBES")
+        k = set(known["M01"].keys())
+        p = set(probes.keys())
+        missing = p - k
+        assert not missing, (
+            f"KNOWN_FEATURES[M01] 未覆盖: {sorted(missing)}\n"
+            f"这些项会走不可靠的 VSS 探测，可能误判。"
+        )
+
 
 class TestHardcodedEnabled:
     """★ 硬编码表必须【被使用】（曾因 return None 而完全失效）"""
