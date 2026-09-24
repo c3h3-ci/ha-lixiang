@@ -117,9 +117,9 @@ config/custom_components/     ←→    ha-lixiang/
 ## 版本发布
 
 ```bash
-./bump.sh patch     # 0.11.0 → 0.11.1（修 bug）
-./bump.sh minor     # 0.11.0 → 0.12.0（加功能）
-./bump.sh major     # 0.11.0 → 1.0.0（稳定版）
+./bump.sh patch     # 1.0.0 → 1.0.1（修 bug）
+./bump.sh minor     # 1.0.0 → 1.1.0（加功能）
+./bump.sh major     # 1.0.0 → 2.0.0（破坏性变更）
 ```
 
 发布后创建 GitHub Release（标记 prerelease，直到 1.0）。

@@ -134,6 +134,8 @@ SEAT_FANS = (
     #      改成只显示状态（移除本项）
     ("seat_sm_heat", "二排中座椅加热", "mdi:car-seat-heater",
      "seat_sm_heat", "secMSeatHeatSw", "二排座椅"),
+    # ⚠️ 推测 controlType（App 里无，serve 端可能不认）：
+    #    状态信号存在且新鲜（09-23/09-24），故保留等实测
     ("seat_sl_vent", "二排左座椅通风", "mdi:car-seat-cooler",
      "seat_sl_vent", "secLSeatVentSw", "二排座椅"),
     ("seat_sr_vent", "二排右座椅通风", "mdi:car-seat-cooler",
