@@ -75,10 +75,16 @@ SIGNALS: dict[str, SignalSpec] = {
         icon="mdi:snowflake-melt",
         category="空调",
     ),  # 有翻译映射
+    # ★ 2026-09-24 修正：ExSpeedStatus 的真实语义是【快冷快热】
+    #   依据：App 的 LXLiMeshStateDelegate.getNeedRapidCoolheat()
+    #        读的就是 LxMeshVssConstant.getExSpeedStatus()
+    #
+    #   ⚠️ key 保留 ac_fan_speed（避免 unique_id 变化、打断用户自动化），
+    #      只把显示名改为"快冷快热"（实体 ID 不变）
     "ac_fan_speed": SignalSpec(
         key="ac_fan_speed",
         path="Vehicle.Cabin.AC.ExSpeedStatus",
-        name="风速",
+        name="快冷快热",
         freq=Freq.HIGH,
         icon="mdi:fan",
         category="空调",

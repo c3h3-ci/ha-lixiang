@@ -145,7 +145,7 @@ SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
     _mk("ac_set_temp", ('空调设定温度', 'TEMPERATURE', '°C', None, 'mdi:thermostat', '空调')),
     _mk("ac_wind_mode", ('风向模式', None, None, None, 'mdi:weather-windy', '空调')),
     _mk("ac_defrost", ('除霜模式', None, None, None, 'mdi:snowflake-melt', '空调')),
-    _mk("ac_fan_speed", ('风速', None, None, None, 'mdi:fan', '空调')),
+    _mk("ac_fan_speed", ('快冷快热', None, None, None, 'mdi:fan', '空调')),
     # ---- 座椅 ----
     _mk("seat_fl_heat", ('主驾座椅加热', None, None, None, 'mdi:car-seat-heater', '座椅')),
     _mk("seat_fl_vent", ('主驾座椅通风', None, None, None, 'mdi:car-seat-cooler', '座椅')),

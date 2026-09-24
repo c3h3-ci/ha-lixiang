@@ -59,7 +59,7 @@ AC_TYPE_AUTO = "frtACAUTOSw"       # 前排自动空调（实测亦可）
 
 # 状态 VSS key
 KEY_AC_ON = "ac_on"                # ★ 空调真实开关信号（Vehicle.Cabin.AC.FOffStatus）
-KEY_FAN_SPEED = "ac_fan_speed"     # 风速（仅用于展示，不用于判定开关）
+KEY_FAN_SPEED = "ac_fan_speed"     # 语义实为"快冷快热"（getNeedRapidCoolheat）
 KEY_SET_TEMP = "ac_set_temp"
 KEY_INSIDE_TEMP = "inside_temp"
 KEY_DEFROST = "ac_defrost"

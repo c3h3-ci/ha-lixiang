@@ -166,6 +166,7 @@ VSS_PATHS = {
     "ac_set_temp": "Vehicle.Cabin.AC.SetTemp",
     "ac_wind_mode": "Vehicle.Cabin.AC.WindMode",
     "ac_defrost": "Vehicle.Cabin.AC.DefrostModeStatus",
+    # ⚠️ 语义实为"快冷快热"（getNeedRapidCoolheat），历史名保留
     "ac_fan_speed": "Vehicle.Cabin.AC.ExSpeedStatus",
     # ★ 空调真实开关信号（2026-09-23 从 App 源码 LiMeshPathHelper 还原）
     #   LXVehicleInfoKeyAC → Vehicle.Cabin.AC.FOffStatus
