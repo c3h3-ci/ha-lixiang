@@ -8,7 +8,8 @@ from datetime import timedelta
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import scan_interval_seconds, DOMAIN, LOGGER_NAME, SCAN_INTERVAL_SECONDS, VSS_PATHS
+from .const import scan_interval_seconds, DOMAIN, LOGGER_NAME, SCAN_INTERVAL_SECONDS
+from .signals import VSS_PATHS_COMPAT as VSS_PATHS
 
 _LOGGER = logging.getLogger(LOGGER_NAME)
 
@@ -81,8 +82,7 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
     #
     MID_FREQ_PREFIXES = (
         "charge_limit", "scheduled_charge_",   # 充电桩配置（很少改）
-        # ★ 胎压告警/TPMS 保持【高频】（安全相关）
-        "seat_s", "seat_t",                     # 二排/三排座椅（很少用）
+        # ★ 二排/三排座椅已改为 HIGH（控制反馈需要每轮拉取）
         "fridge_",                              # 冰箱（无此硬件）
         "tank_lock",                            # 油箱锁
         "sunshade",                             # 遮阳帘
@@ -266,19 +266,8 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
                     if path in vss["vss"]
                 }
                 data["vss_polled_at"] = vss.get("polled_at")
-                # ★ 2026-09-24 修复：basics 缺失/为空时用 VSS 连接信号兜底
-                #
-                #   bug：原条件是 `"vehicle_status" not in data`，
-                #        但 basics 实测返回 None（saos 接口对该账号返回 null）
-                #        → 键不存在 → 应该兜底才对
-                #        ⚠️ 但 basics 为 None 时 data["vehicle_status"] 根本没被写入
-                #           （见 client.py：只有 basics 是 dict 时才写），
-                #           所以这个条件实际是生效的 —— 真正的问题是
-                #           它在 `if self.li_api is not None:` 的 try 块内，
-                #           而 vehicle_status 的兜底需要 VSS 数据已就绪。
-                #
-                #   现在的实现：值缺失（None 或键不存在）都兜底，
-                #   并用 5G → XCU → hu-f 依次尝试。
+                # ★ 远端修复：vehicle_status 缺失/为空时用 VSS 连接信号兜底
+                #   is None 覆盖键不存在与 basics=null；依次 5G → XCU → hu-f
                 if data.get("vehicle_status") is None:
                     for _k in ("online_5g", "online_xcu", "online_huf"):
                         _sig = data["vss"].get(_k)
@@ -290,7 +279,7 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
                                 _k, data["vehicle_status"])
                             break
 
-                # ★ 补充：即使 VSS 轮询失败，也尝试从 data["vss"] 的旧数据兜底
+                # VSS 轮询失败时也尝试从 data["vss"] 旧数据兜底
                 if data.get("vehicle_status") is None:
                     for _k in ("online_5g", "online_xcu", "online_huf"):
                         _sig = (data.get("vss") or {}).get(_k)
@@ -301,7 +290,13 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
             except Exception as err:  # noqa: BLE001
                 # 实时信号失败不拖垮静态数据 (也避免反复触发登录)
                 _LOGGER.warning("VSS 实时信号轮询失败: %s", err)
+                # 异常路径同样兜底
+                if data.get("vehicle_status") is None:
+                    for _k in ("online_5g", "online_xcu", "online_huf"):
+                        _sig = (data.get("vss") or {}).get(_k)
+                        if _sig and _sig.get("value") is not None:
+                            _v = str(_sig["value"]).strip().lower()
+                            data["vehicle_status"] = 1 if _v in ("true", "1") else 0
+                            break
 
-        _LOGGER.warning("★ 轮询结束: vehicle_status=%r  vss条数=%d",
-                        data.get("vehicle_status"), len(data.get("vss") or {}))
         return data

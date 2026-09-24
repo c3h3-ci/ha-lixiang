@@ -58,8 +58,17 @@ def _gc() -> None:
 
 
 def create_session(phone: str, password: str, device_id: str) -> str:
-    """创建一个登录会话，返回 token。"""
+    """创建一个登录会话，返回 token。
+
+    ★ device_id 不能为空：空值会让 account.lixiang.com/app-auth
+      一直停在 loading（图三现象）。
+    """
     _gc()
+    device_id = str(device_id or "").strip()
+    if not device_id:
+        import uuid
+        device_id = uuid.uuid4().hex
+        _LOGGER.warning("create_session 收到空 device_id，已自动生成 %s", device_id[:12])
     tok = secrets.token_urlsafe(24)
     _SESSIONS[tok] = {
         "phone": phone,
@@ -108,28 +117,68 @@ class LiXiangLoginView(HomeAssistantView):
     requires_auth = False        # ★ 用户可能未登录 HA，允许匿名访问
 
     async def get(self, request: web.Request) -> web.Response:
-        hass: HomeAssistant = request.app["hass"]
         _gc()
         tok = request.query.get("token", "")
+        if not tok:
+            # 诊断页：能打开本页 = 路由已注册（用于区分「视图 404」和「token 失效」）
+            return web.Response(
+                text=(
+                    "<h3>lixiang_auto 登录辅助页已就绪</h3>"
+                    "<p>路由 <code>/lixiang-login</code> 注册成功。</p>"
+                    "<p>请回到 Home Assistant 配置流程，使用带 "
+                    "<code>?token=...</code> 的完整链接。</p>"
+                ),
+                content_type="text/html")
         s = _SESSIONS.get(tok)
         if not s:
             return web.Response(
-                text="<h3>链接已失效</h3><p>请回到 Home Assistant 重新发起配置。</p>",
+                text=(
+                    "<h3>链接已失效（token 无效或已过期）</h3>"
+                    "<p>请回到 Home Assistant 重新发起配置，复制新的链接。</p>"
+                    "<p>若你刚改过「HA 访问地址」，请确认复制的是表单里最新生成的地址。</p>"
+                ),
                 content_type="text/html", status=404)
 
         # ★ 不在 HA 页面里嵌 iframe（会被 CORB/嵌入限制拦），
         #   改为提供【新窗口链接】，指向理想登录页并带上 HA 的 device_id
-        dev = s["device_id"]
-        login_url = (
-            "https://account.lixiang.com/app-auth"
-            "?client_id=2AQClOaegaA7XecMSFx1p"
-            "&redirect_uri=https%3A%2F%2Faccount.lixiang.com%2Fapp-auth"
-            "&response_type=code&scope=login"
-            "&audience=1j0vgTqagJUHuT6nLmbTGx"
-            f"&device_id={dev}"
-        )
+        dev = str(s.get("device_id") or "").strip()
+        if not dev:
+            import uuid
+            dev = uuid.uuid4().hex
+            s["device_id"] = dev
+            _LOGGER.warning("会话缺少 device_id，已补生成 %s", dev[:12])
+
+        # ★ 2026-09-24 修复「一直转圈」：
+        #   /app-auth 默认 mode=app → 登录后 /login 会跳到 /login/App
+        #   （App WebView 桥接页），普通浏览器里永远停在 loading。
+        #   必须带 mode=h5 才会渲染 H5 登录表单。
+        #   audience/scope 用 pake 登录实测值（VSS audience 会走错授权分支）。
+        from urllib.parse import urlencode
+        from .const import ACCOUNT_BASE, AUDIENCE, CLIENT_ID
+
+        # 主链接：/app-auth + mode=h5 → SPA 会写入 mode 后走 authorize
+        #   （必须 mode=h5，否则会跳到 /login/app 的 App 桥接页并一直转圈）
+        login_url = ACCOUNT_BASE + "/app-auth?" + urlencode({
+            "mode": "h5",
+            "client_id": CLIENT_ID,
+            "redirect_uri": f"{ACCOUNT_BASE}/app-auth",
+            "response_type": "code",
+            "scope": "iam:client:type:app openid",
+            "audience": AUDIENCE,
+            "device_id": dev,
+        })
+        # 备用：同样 mode=h5，但不带 audience/scope → 走 auth.login() 纯登录
+        #   （authorize 参数异常导致卡住时用这条）
+        alt_url = ACCOUNT_BASE + "/app-auth?" + urlencode({
+            "mode": "h5",
+            "client_id": CLIENT_ID,
+            "redirect_uri": f"{ACCOUNT_BASE}/app-auth",
+            "response_type": "code",
+            "device_id": dev,
+        })
         html = (_load_login_html()
                 .replace("%%LOGIN_URL%%", login_url)
+                .replace("%%ALT_LOGIN_URL%%", alt_url)
                 .replace("%%DEVICE_ID%%", dev)
                 .replace("%%TOKEN%%", tok))
         return web.Response(text=html, content_type="text/html")
@@ -196,6 +245,11 @@ def try_login(phone: str, password: str, device_id: str) -> bool:
 
     返回 True 表示登录成功（设备已受信任）。
     """
+    device_id = str(device_id or "").strip()
+    if not device_id or not phone or not password:
+        # 空 device_id 会让 LixiangDirectLogin 每次随机生成，永远对不上会话
+        _LOGGER.debug("try_login 参数不完整，跳过 (device_id=%s)", device_id[:12])
+        return False
     try:
         from .pake_login import LixiangDirectLogin, LoginError
     except ImportError:

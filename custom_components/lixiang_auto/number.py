@@ -1,18 +1,10 @@
 """理想汽车数值设置实体（number 平台）.
 
-功能（仅保留已实测命令）:
-  - 空调设定温度: remoteVehACSmartControl
-      {"acCtrlValue":"ON","acCtrlType":"frtACSw","acCountdownTimer":"15",
-       "acCtrlTemp":<16-30>}     ← acCtrlTemp 必须是 Number, 不能 str()
+功能:
+  - 空调设定温度: remoteVehACSmartControl (16-30°C)
+  - 座椅加热/通风档位: 0=关, 1/2/3=档（三档调节与显示）
 
-★ 旧实现用 remote_ac_temp_adjust + {"temperature":..} 是错的（APK 枚举值），
-  已修正为真实的 remoteVehACSmartControl + acCtrlTemp。
-
-★ 旧的"充电上限"(charge_percent + {"chargePercent":..}) 已【移除】:
-  该命令不在已实测命令表 (cmd_table_verified.json) 内，无法确认 cmdKey/cmdData，
-  保留会给出虚假的控制能力。充电上限目前只作为 sensor 只读展示。
-
-状态读取: VSS 实时信号 ac_set_temp (Vehicle.Cabin.AC.SetTemp)
+acCtrlTemp 必须是 Number，不能字符串。
 
 ⚠️ 写入会真实作用于车辆。
 """
@@ -47,6 +39,10 @@ AC_COUNTDOWN = "15"
 AC_MIN_TEMP = 16
 AC_MAX_TEMP = 30
 
+SEAT_LEVEL_MIN = 0
+SEAT_LEVEL_MAX = 3
+SEAT_LEVEL_STEP = 1
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -64,7 +60,9 @@ async def async_setup_entry(
     if li_api is None:
         _LOGGER.warning("无密码登录凭据，跳过 number 实体")
         return
-    async_add_entities([
+
+    # 仅空调温度；座椅档位已迁至 fan.py（关闭/低/中/高）
+    entities: list = [
         LiCarNumber(
             coordinator, li_api, device_info, vin,
             suffix="ac_set_temp", name="空调设定温度",
@@ -74,11 +72,11 @@ async def async_setup_entry(
             unit=UnitOfTemperature.CELSIUS,
             device_class=NumberDeviceClass.TEMPERATURE,
         ),
-    ])
+    ]
+    async_add_entities(entities)
 
 
 def _ac_temp_payload(value: float) -> dict:
-    """构造空调设定温度报文. ★ acCtrlTemp 必须是 Number."""
     f = float(value)
     return {
         "acCtrlValue": "ON",
@@ -86,6 +84,24 @@ def _ac_temp_payload(value: float) -> dict:
         "acCountdownTimer": AC_COUNTDOWN,
         "acCtrlTemp": int(f) if f.is_integer() else round(f, 1),
     }
+
+
+def _seat_level_payload(control_type: str):
+    def build(value: float) -> dict:
+        lvl = int(round(float(value)))
+        lvl = max(0, min(3, lvl))
+        if lvl <= 0:
+            ctrl = "OFF"
+        else:
+            ctrl = f"LEVEL{lvl}"
+        return {
+            "acCtrlType": control_type,
+            "acCtrlValue": ctrl,
+            "acCountdownTimer": 30,
+            "acCtrlTemp": 22.5,
+        }
+
+    return build
 
 
 class LiCarNumber(CoordinatorEntity, NumberEntity):
@@ -147,7 +163,7 @@ class LiCarNumber(CoordinatorEntity, NumberEntity):
             self._optimistic_value = float(value)
             _LOGGER.info("车控 %s %s 已执行: %s", self._cmd_key, cmd_data, res)
         except Exception as err:  # noqa: BLE001
-            _LOGGER.error("车控 %s %s 失败: %s", self._cmd_key, cmd_data, err)
+            _LOGGER.error("车控 %s 失败: %s", self._cmd_key, cmd_data, err)
             self._optimistic_value = None
             raise
         self.async_write_ha_state()
