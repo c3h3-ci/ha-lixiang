@@ -150,5 +150,67 @@ class TestTtlValue:
         m = re.search(r"OPTIMISTIC_TTL\s*=\s*([\d.]+)", src)
         assert m, f"{platform}.py 未找到 OPTIMISTIC_TTL 定义"
         val = float(m.group(1))
-        assert 20 <= val <= 120, (
-            f"{platform}.py 的 OPTIMISTIC_TTL={val} 不合理（建议 30~60）")
+        # ★ 依据：轮询间隔 60 秒 → TTL 应覆盖 1.5~3 个周期（90~180 秒）
+        assert 60 <= val <= 300, (
+            f"{platform}.py 的 OPTIMISTIC_TTL={val} 不合理"
+            "（应 ≥1.5 倍轮询间隔，即 90 秒以上；建议 120~180）")
+
+
+class TestPollingFrequency:
+    """★ 轮询频率与"可控制实体"的关联
+
+    背景（2026-09-24）：用户反馈座椅状态显示错误。
+    根因：二排座椅被归到 MID 频率（1 小时轮询），
+         但它是【用户主动控制】的实体 —— 控制后要等 1 小时才同步。
+
+    原则：能被 HA 控制的实体（switch/fan/number/cover/climate），
+         其状态信号必须是 HIGH 频率（每轮轮询）。
+    """
+
+    # 用户可控制的信号前缀（对应 HA 实体）
+    # ⚠️ 不要用泛前缀 "ac_" —— ac_temp_color 等是只读属性
+    CONTROLLABLE_PREFIXES = (
+        "seat_fl_", "seat_fr_", "seat_sl_", "seat_sr_", "seat_sm_",
+        "seat_tl_", "seat_tr_", "seat_tm_",
+        "wheel_heat",
+        "ac_on", "ac_defrost", "ac_fan_speed",
+        "charge_status", "sentry_",
+        "window_", "door_trunk",
+    )
+    # 例外：明确知道不可控制的
+    READONLY_EXCEPTIONS = {
+        "ac_temp_color",      # 空调温度色（只读属性）
+    }
+
+    def test_controllable_signals_are_high_freq(self):
+        """★ 可控制的信号必须是 HIGH 频率"""
+        import sys
+        sys.path.insert(0, str(INTEG))
+        from signals import SIGNALS, Freq
+
+        bad = []
+        for key, spec in SIGNALS.items():
+            if key in self.READONLY_EXCEPTIONS:
+                continue
+            if not any(key.startswith(p) for p in self.CONTROLLABLE_PREFIXES):
+                continue
+            if spec.freq != Freq.HIGH:
+                bad.append((key, spec.freq))
+
+        assert not bad, (
+            "以下【可控制】信号不是 HIGH 频率（会导致控制后长时间显示旧状态）：\n"
+            + "\n".join(f"  {k}: {f}" for k, f in bad))
+
+    def test_seat_signals_high_freq(self):
+        """★ 座椅加热/通风必须 HIGH（用户主动控制，需立即反馈）"""
+        import sys
+        sys.path.insert(0, str(INTEG))
+        from signals import SIGNALS, Freq
+
+        for key in ("seat_fl_heat", "seat_fr_heat", "seat_sl_heat",
+                    "seat_sm_heat", "seat_sr_heat", "seat_fl_vent"):
+            spec = SIGNALS.get(key)
+            assert spec is not None, f"{key} 不存在"
+            assert spec.freq == Freq.HIGH, (
+                f"{key} 应为 HIGH 频率（当前 {spec.freq}）—— "
+                "座椅是可控实体，低频轮询会导致状态显示滞后")

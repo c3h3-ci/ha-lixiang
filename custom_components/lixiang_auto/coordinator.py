@@ -82,7 +82,10 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
     MID_FREQ_PREFIXES = (
         "charge_limit", "scheduled_charge_",   # 充电桩配置（很少改）
         # ★ 胎压告警/TPMS 保持【高频】（安全相关）
-        "seat_s", "seat_t",                     # 二排/三排座椅（很少用）
+        # ★ 2026-09-24 移除 "seat_s"/"seat_t"（用户反馈座椅状态显示错误）：
+        #   座椅是【用户主动控制】的功能 —— 点了开关就要立即看到状态。
+        #   原来归到 MID（1 小时）→ 控制后要等 1 小时才能同步真实状态。
+        #   "很少用" ≠ "不需要及时反馈"。
         "fridge_",                              # 冰箱（无此硬件）
         "tank_lock",                            # 油箱锁
         "sunshade",                             # 遮阳帘

@@ -44,8 +44,12 @@ CMD_AC = "remoteVehACSmartControl"
 AC_TYPE_FRONT = "frtACSw"
 AC_COUNTDOWN = "15"
 
-# ★ 2026-09-24 新增：乐观更新有效期（秒）
-OPTIMISTIC_TTL = 45.0
+# ★ 2026-09-24 乐观更新有效期（秒）
+#   依据：HA 轮询间隔 DEFAULT_SCAN_INTERVAL_SECONDS = 60 秒
+#   取 2.5 倍轮询周期 = 150 秒 → 保证至少 2 次轮询机会让 VSS 追上
+#   （过短：VSS 还没更新乐观值就失效 → 显示回退；
+#     过长：服务端真实变化被掩盖过久）
+OPTIMISTIC_TTL = 150.0
 
 AC_MIN_TEMP = 16
 AC_MAX_TEMP = 30

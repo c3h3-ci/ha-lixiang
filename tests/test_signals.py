@@ -163,6 +163,23 @@ class TestFreqEquivalence:
         "charge_here", "rear_load_mode", "ress_power_bar_color",
         "ogc_charge_current", "ogc_charge_voltage", "ogc_type",
     }
+    # ★ 2026-09-24：座椅频率从 MID 改为 HIGH
+    #   原因：座椅是【用户主动控制】的实体，控制后需立即反馈状态。
+    #   归到 MID（1 小时）会导致"切换档位后长时间显示关闭"。
+    #   已在 coordinator.py 移除 "seat_s"/"seat_t" 前缀，
+    #   并重新生成了 signals.py 的 freq。
+    SEAT_FREQ_FIXED = {
+        "Vehicle.Cabin.Seat.SLSeatHeatState",
+        "Vehicle.Cabin.Seat.SRSeatHeatState",
+        "Vehicle.Cabin.Seat.SMSeatHeatState",
+        "Vehicle.Cabin.Seat.SLSeatVentilationState",
+        "Vehicle.Cabin.Seat.SRSeatVentilationState",
+        "Vehicle.Cabin.Seat.TLSeatHeatState",
+        "Vehicle.Cabin.Seat.TRSeatHeatState",
+        "Vehicle.Cabin.Seat.TMSeatHeatState",
+        "Vehicle.Cabin.Seat.TLSeatVentilationState",
+        "Vehicle.Cabin.Seat.TRSeatVentilationState",
+    }
     MANUAL_PATHS = {
         "Vehicle.Cabin.RmtVirtualKeyAuthSts",
         "Vehicle.Account.Cloud.VehicleAccounts",
@@ -221,7 +238,8 @@ class TestFreqEquivalence:
         mid_new = {s.path for s in sg.by_freq(sg.Freq.MID)}
         lo_new = {s.path for s in sg.by_freq(sg.Freq.LOW)}
 
-        exc = self.MANUAL_PATHS
+        # 手工补充的信号 + 座椅频率修正 → 豁免等价性检查
+        exc = self.MANUAL_PATHS | self.SEAT_FREQ_FIXED
         assert hi_new - exc == hi_old - exc, \
             f"HIGH 分组不一致: {(hi_new - exc) ^ (hi_old - exc)}"
         assert mid_new - exc == mid_old - exc, \

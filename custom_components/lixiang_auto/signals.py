@@ -868,7 +868,7 @@ SIGNALS: dict[str, SignalSpec] = {
         key="seat_sl_heat",
         path="Vehicle.Cabin.Seat.SLSeatHeatState",
         name="二排左座椅加热",
-        freq=Freq.MID,
+        freq=Freq.HIGH,
         icon="mdi:car-seat-heater",
         category="座椅",
     ),  # 有翻译映射
@@ -876,7 +876,7 @@ SIGNALS: dict[str, SignalSpec] = {
         key="seat_sl_vent",
         path="Vehicle.Cabin.Seat.SLSeatVentilationState",
         name="二排左座椅通风",
-        freq=Freq.MID,
+        freq=Freq.HIGH,
         icon="mdi:car-seat-cooler",
         category="座椅",
     ),  # 有翻译映射
@@ -884,7 +884,7 @@ SIGNALS: dict[str, SignalSpec] = {
         key="seat_sm_heat",
         path="Vehicle.Cabin.Seat.SMSeatHeatState",
         name="二排中座椅加热",
-        freq=Freq.MID,
+        freq=Freq.HIGH,
         icon="mdi:car-seat-heater",
         category="座椅",
     ),  # 有翻译映射
@@ -892,7 +892,7 @@ SIGNALS: dict[str, SignalSpec] = {
         key="seat_sr_heat",
         path="Vehicle.Cabin.Seat.SRSeatHeatState",
         name="二排右座椅加热",
-        freq=Freq.MID,
+        freq=Freq.HIGH,
         icon="mdi:car-seat-heater",
         category="座椅",
     ),  # 有翻译映射
@@ -900,7 +900,7 @@ SIGNALS: dict[str, SignalSpec] = {
         key="seat_sr_vent",
         path="Vehicle.Cabin.Seat.SRSeatVentilationState",
         name="二排右座椅通风",
-        freq=Freq.MID,
+        freq=Freq.HIGH,
         icon="mdi:car-seat-cooler",
         category="座椅",
     ),  # 有翻译映射
@@ -908,7 +908,7 @@ SIGNALS: dict[str, SignalSpec] = {
         key="seat_tl_heat",
         path="Vehicle.Cabin.Seat.TLSeatHeatState",
         name="三排左座椅加热",
-        freq=Freq.MID,
+        freq=Freq.HIGH,
         icon="mdi:car-seat-heater",
         category="座椅",
     ),  # 有翻译映射
@@ -916,7 +916,7 @@ SIGNALS: dict[str, SignalSpec] = {
         key="seat_tl_vent",
         path="Vehicle.Cabin.Seat.TLSeatVentilationState",
         name="三排左座椅通风",
-        freq=Freq.MID,
+        freq=Freq.HIGH,
         icon="mdi:car-seat-cooler",
         category="座椅",
     ),  # 有翻译映射
@@ -924,7 +924,7 @@ SIGNALS: dict[str, SignalSpec] = {
         key="seat_tm_heat",
         path="Vehicle.Cabin.Seat.TMSeatHeatState",
         name="三排中座椅加热",
-        freq=Freq.MID,
+        freq=Freq.HIGH,
         icon="mdi:car-seat-heater",
         category="座椅",
     ),  # 有翻译映射
@@ -932,7 +932,7 @@ SIGNALS: dict[str, SignalSpec] = {
         key="seat_tr_heat",
         path="Vehicle.Cabin.Seat.TRSeatHeatState",
         name="三排右座椅加热",
-        freq=Freq.MID,
+        freq=Freq.HIGH,
         icon="mdi:car-seat-heater",
         category="座椅",
     ),  # 有翻译映射
@@ -940,7 +940,7 @@ SIGNALS: dict[str, SignalSpec] = {
         key="seat_tr_vent",
         path="Vehicle.Cabin.Seat.TRSeatVentilationState",
         name="三排右座椅通风",
-        freq=Freq.MID,
+        freq=Freq.HIGH,
         icon="mdi:car-seat-cooler",
         category="座椅",
     ),  # 有翻译映射

@@ -50,10 +50,12 @@ MIN_TEMP = 16
 MAX_TEMP = 30
 DEFAULT_TEMP = 26
 
-# ★ 2026-09-24 新增：乐观更新有效期（秒）
-#   发命令后车机上报有延迟，期间用乐观值显示，
-#   避免"刚设置就显示回旧值"。
-OPTIMISTIC_TTL = 45.0
+# ★ 2026-09-24 乐观更新有效期（秒）
+#   依据：HA 轮询间隔 DEFAULT_SCAN_INTERVAL_SECONDS = 60 秒
+#   取 2.5 倍轮询周期 = 150 秒 → 保证至少 2 次轮询机会让 VSS 追上
+#   （过短：VSS 还没更新乐观值就失效 → 显示回退；
+#     过长：服务端真实变化被掩盖过久）
+OPTIMISTIC_TTL = 150.0
 TARGET_STEP = 1.0
 # 空调运行倒计时（分钟，字符串）
 AC_COUNTDOWN = "15"

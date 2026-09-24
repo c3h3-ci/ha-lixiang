@@ -37,7 +37,7 @@ DEFAULT_LEVEL = 3  # 打开默认高档
 #   发命令后，车机上报状态有延迟（几秒~几十秒）。
 #   在这段时间内如果 VSS 还没跟上，就用乐观值显示，
 #   避免"刚打开就显示关闭"的问题。
-OPTIMISTIC_TTL = 45.0
+OPTIMISTIC_TTL = 150.0
 
 # 低→中→高（HA fan 百分比 ordered list）
 _ORDERED_SPEEDS = ["low", "medium", "high"]
