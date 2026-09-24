@@ -423,53 +423,66 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return urls
 
     def _browser_ph(self, tok: str, device_id: str) -> dict[str, str]:
-        """辅助页面的说明文案。
+        """生成登录步骤的说明文案与链接。
 
-        ★ 2026-09-24 改进（用户反馈"在外面登不了"）：
+        ★ 2026-09-24 方案 B（用户选择）：HA 弹窗【直接给完整登录链接】
 
-          问题：config_flow 里【拿不到用户当前的访问地址】
-                （HA 的 FlowContext 只有 source，没有请求 Host）
-                → 只能靠 hass.config 的配置值
-                → 用户配错协议（写 https 实际没 HTTPS）就打不开
+          为什么可以不用辅助页：
+            · 辅助页的唯二作用是「传 device_id」+「轮询状态提示」
+            · device_id 可以直接拼进 URL
+            · 状态提示用文案代替（"登录成功后回这里点提交"）
 
-          解决：
-            ① 主链接用【相对路径 /lixiang-login?token=xxx】
-               浏览器自动补全当前域名 → 在哪儿访问都对！
-            ② 绝对地址作为备选（内网 + 外网都列出）
-            ③ 说明内网地址只在家里 Wi-Fi 下可用
+          好处：
+            · 没有 iframe → 滑块 100% 可用（无嵌入风险）
+            · 少一次跳转，故障点更少
+
+          链接参数（来自 auth_web 的实测值）：
+            mode=h5 必须带（否则页面空白）
+            scope/audience 用登录实测值
         """
-        # ★ 主链接：相对路径
-        rel_url = f"/lixiang-login?token={tok}"
+        from urllib.parse import urlencode
 
-        # 绝对地址备选
-        abs_urls = [f"{b}/lixiang-login?token={tok}"
-                    for b in self._all_base_urls()]
+        from .const import ACCOUNT_BASE, AUDIENCE, CLIENT_ID
 
-        if abs_urls:
-            alt_lines = []
-            for u in abs_urls:
-                is_lan = any(x in u for x in ("192.168.", "10.", "127.0.0.1",
-                                              "localhost"))
-                tag = "   ← 仅在家里 Wi-Fi 下可用（外网请用上面那条）" if is_lan \
-                    else "   ← 外网地址（内网也能用）"
-                alt_lines.append(f"· {u}{tag}")
-            alt = "\n".join(alt_lines)
-        else:
-            alt = "（无法自动推断地址，请手动打开：你的 HA 地址 + /lixiang-login?token=…）"
+        # ① 理想官方登录链接（含 device_id）
+        login_url = ACCOUNT_BASE + "/app-auth?" + urlencode({
+            "mode": "h5",
+            "client_id": CLIENT_ID,
+            "redirect_uri": f"{ACCOUNT_BASE}/app-auth",
+            "response_type": "code",
+            "scope": "iam:client:type:app openid",
+            "audience": AUDIENCE,
+            "device_id": device_id,
+        })
+        # 备用：不带 audience/scope（authorize 异常时用）
+        alt_login_url = ACCOUNT_BASE + "/app-auth?" + urlencode({
+            "mode": "h5",
+            "client_id": CLIENT_ID,
+            "redirect_uri": f"{ACCOUNT_BASE}/app-auth",
+            "response_type": "code",
+            "device_id": device_id,
+        })
 
+        # ② 辅助页链接（可选，带状态反馈）
+        helper_urls: list[str] = []
+        for b in self._all_base_urls():
+            helper_urls.append(f"{b}/lixiang-login?token={tok}")
+        helper_first = helper_urls[0] if helper_urls else ""
+
+        # ③ 用户填的 HA 访问地址
         cur_base = getattr(self, "_user_base_url", None) or self._base_url()
 
-        # ★ url_abs 必须是一个【完整可点击】的地址
-        #   若推断不出绝对地址，用相对路径兜底（浏览器可能仍能打开）
-        abs_first = abs_urls[0] if abs_urls else ""
-        if not abs_first:
-            # 退化：用猜到的 base + 相对路径
-            abs_first = f"{cur_base}/lixiang-login?token={tok}"
-
         return {
-            "url": rel_url,
-            "url_abs": abs_first,
-            "url_alt": alt,
+            # ★ 主链接：直接到理想登录页（含 device_id）
+            "login_url": login_url,
+            "login_url_alt": alt_login_url,
+            # 辅助页（可选）
+            "helper_url": helper_first,
+            "helper_alt": "\n".join(f"· {u}" for u in helper_urls),
+            # 兼容旧占位符（模板可能还在用）
+            "url": helper_first,
+            "url_abs": helper_first,
+            "url_alt": "\n".join(f"· {u}" for u in helper_urls),
             "token": tok,
             "base_url": cur_base,
             "device": device_id[:16],
