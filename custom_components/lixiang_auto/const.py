@@ -208,6 +208,33 @@ VSS_PATHS = {
     "mileage_final": "Vehicle.Cabin.CLTC.MileageFinalResult",
     # 电池类型（三元锂/磷酸铁锂）
     "battery_type": "Vehicle.Powertrain.Battery.PowerBatteryType",
+    # ★ 2026-09-24 补充（task-14 报告的有价值信号，已实测有数据）
+    # ---- 授权/账号 ----
+    "virtual_key_auth": "Vehicle.Cabin.RmtVirtualKeyAuthSts",
+    "vehicle_accounts": "Vehicle.Account.Cloud.VehicleAccounts",
+    # ---- 激活流程 ----
+    "provision_complete": "Vehicle.Provision.Process.Complete",
+    "provision_finish": "Vehicle.Provision.Process.FinishSuccess",
+    # ---- 保养 ----
+    "maint_engine_level2": "Vehicle.Carcenter.Maintain.enginelevel2",
+    # ---- 座椅门干涉 ----
+    "seat_l_door_interference": "Vehicle.Body.SeatLDoor.InterferenceSts",
+    "seat_r_door_interference": "Vehicle.Body.SeatRDoor.InterferenceSts",
+    # ---- 冰箱预约 / 离车模式 ----
+    "fridge_reserve": "Vehicle.CarSettings.Xmode.ReserveFridge",
+    "xmode": "Vehicle.CarSettings.MoveOffOnTime.Xmode",
+    # ---- 空调温度色 ----
+    "ac_temp_color": "Vehicle.Cabin.AC.FrtWindTempColor",
+    # ---- 充电校准 / 位置 ----
+    "charge_calibration": "Vehicle.VehInfo.CarCenter.ChargeManagement.ChargingCalibration",
+    "charge_here": "Vehicle.Powertrain.ChargingPile.ScheduledCharging.ChargeHere",
+    "rear_load_mode": "Vehicle.VehInfo.CarSettings.Maintain.RearLoadModeSetting",
+    # ---- 电池功率条 ----
+    "ress_power_bar_color": "Vehicle.Powertrain.Battery.RESSPowerBarCol",
+    # ---- OGC（第三方充电桩）----
+    "ogc_charge_current": "Vehicle.Powertrain.Battery.OGCChargeCurrent",
+    "ogc_charge_voltage": "Vehicle.Powertrain.Battery.OGCChargeVoltage",
+    "ogc_type": "Vehicle.Powertrain.ChargingPile.OGCType",
     # 预约充电模式
     "charge_order_mode": "Vehicle.Powertrain.ChargingPile.ScheduledCharging.OrderChargingMode",
     "wheel_heat": "Vehicle.Cabin.WheelWarmStatus.WarmOnOff",

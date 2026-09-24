@@ -64,7 +64,30 @@ async def async_setup_entry(
     if li_api is None:
         _LOGGER.warning("无密码登录凭据，跳过 number 实体")
         return
-    async_add_entities([
+    # ★ 2026-09-24 补充：座椅加热/通风档位（0-3）
+    #   0 = 关闭，1/2/3 = 档位
+    #   controlType 来自 VehicleControlModel$Companion
+    seat_specs = [
+        ("seat_fl_heat_level", "主驾加热档位", "seat_fl_heat", "flSeatHeatSw",
+         "mdi:car-seat-heater", "座椅加热"),
+        ("seat_fr_heat_level", "副驾加热档位", "seat_fr_heat", "frSeatHeatSw",
+         "mdi:car-seat-heater", "座椅加热"),
+        ("seat_sl_heat_level", "二排左加热档位", "seat_sl_heat", "secLSeatHeatSw",
+         "mdi:car-seat-heater", "二排座椅"),
+        ("seat_sr_heat_level", "二排右加热档位", "seat_sr_heat", "secRSeatHeatSw",
+         "mdi:car-seat-heater", "二排座椅"),
+        ("seat_fl_vent_level", "主驾通风档位", "seat_fl_vent", "flSeatVentSw",
+         "mdi:car-seat-cooler", "座椅加热"),
+        ("seat_fr_vent_level", "副驾通风档位", "seat_fr_vent", "frSeatVentSw",
+         "mdi:car-seat-cooler", "座椅加热"),
+        ("seat_sl_vent_level", "二排左通风档位", "seat_sl_vent", "secLSeatVentSw",
+         "mdi:car-seat-cooler", "二排座椅"),
+        ("seat_sr_vent_level", "二排右通风档位", "seat_sr_vent", "secRSeatVentSw",
+         "mdi:car-seat-cooler", "二排座椅"),
+    ]
+
+    features = (data.get("features") or {})
+    entities = [
         LiCarNumber(
             coordinator, li_api, device_info, vin,
             suffix="ac_set_temp", name="空调设定温度",
@@ -74,7 +97,22 @@ async def async_setup_entry(
             unit=UnitOfTemperature.CELSIUS,
             device_class=NumberDeviceClass.TEMPERATURE,
         ),
-    ])
+    ]
+    for suffix, name, state_key, ctrl_type, icon, feat in seat_specs:
+        if not features.get(feat, True):
+            _LOGGER.debug("车型不支持 %s，跳过 %s", feat, suffix)
+            continue
+        entities.append(
+            LiCarNumber(
+                coordinator, li_api, device_info, vin,
+                suffix=suffix, name=name,
+                icon=icon, state_key=state_key,
+                cmd_key=CMD_AC, data_builder=_seat_level_payload_factory(ctrl_type),
+                minimum=0, maximum=3, step=1,
+                unit=None, device_class=None,
+            )
+        )
+    async_add_entities(entities)
 
 
 def _ac_temp_payload(value: float) -> dict:
@@ -86,6 +124,33 @@ def _ac_temp_payload(value: float) -> dict:
         "acCountdownTimer": AC_COUNTDOWN,
         "acCtrlTemp": int(f) if f.is_integer() else round(f, 1),
     }
+
+
+def _seat_level_payload_factory(control_type: str):
+    """构造座椅加热/通风的档位报文（0=关，1/2/3=档位）.
+
+    ★ 2026-09-24 依据 App 的 XVehicleJobHelper$Companion.customVehicleACControl():
+        RN 侧入参 {controlType, level, temp} 会被翻译为：
+          {"acCtrlType": controlType,
+           "acCtrlValue": level>0 ? "LEVEL"+level : "OFF",
+           "acCountdownTimer": 30,
+           "acCtrlTemp": <Number>}
+      ⚠️ 座椅类用的是 "LEVEL1/2/3" 字符串编码，没有 level 字段！
+         （白名单类如 strgWhlHeatSw 才用 "ON"/"OFF"）
+    """
+    def builder(value: float) -> dict:
+        lv = int(round(float(value)))
+        lv = max(0, min(3, lv))
+        return {
+            "acCtrlType": control_type,
+            "acCtrlValue": f"LEVEL{lv}" if lv > 0 else "OFF",
+            "acCountdownTimer": 30,
+            "acCtrlTemp": DEFAULT_SEAT_TEMP,
+        }
+    return builder
+
+
+DEFAULT_SEAT_TEMP = 22.5
 
 
 class LiCarNumber(CoordinatorEntity, NumberEntity):

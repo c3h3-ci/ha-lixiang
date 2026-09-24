@@ -1207,6 +1207,169 @@ SIGNALS: dict[str, SignalSpec] = {
         icon="mdi:car-connected",
         category="状态",
     ),
+    # ═══════════════════════════════════════════════════════════════════
+    #  ★ 2026-09-24 手工补充的信号（task-14 报告，已实测有数据）
+    #  ⚠️ 这些不在 gen_signals.py 的生成源里，需手工维护
+    # ═══════════════════════════════════════════════════════════════════
+    # ---- 授权 / 账号 ----
+    "virtual_key_auth": SignalSpec(
+        key="virtual_key_auth",
+        path="Vehicle.Cabin.RmtVirtualKeyAuthSts",
+        name="远程虚拟钥匙授权",
+        freq=Freq.LOW,
+        icon="mdi:key-variant",
+        category="状态",
+        diagnostic=True,
+    ),
+    "vehicle_accounts": SignalSpec(
+        key="vehicle_accounts",
+        path="Vehicle.Account.Cloud.VehicleAccounts",
+        name="车辆账号",
+        freq=Freq.LOW,
+        icon="mdi:account-multiple",
+        category="信息",
+        diagnostic=True,
+    ),
+    # ---- 激活流程 ----
+    "provision_complete": SignalSpec(
+        key="provision_complete",
+        path="Vehicle.Provision.Process.Complete",
+        name="激活完成",
+        freq=Freq.LOW,
+        icon="mdi:check-circle",
+        category="信息",
+        diagnostic=True,
+    ),
+    "provision_finish": SignalSpec(
+        key="provision_finish",
+        path="Vehicle.Provision.Process.FinishSuccess",
+        name="激活成功信息",
+        freq=Freq.LOW,
+        icon="mdi:clipboard-check",
+        category="信息",
+        diagnostic=True,
+    ),
+    # ---- 保养二级 ----
+    "maint_engine_level2": SignalSpec(
+        key="maint_engine_level2",
+        path="Vehicle.Carcenter.Maintain.enginelevel2",
+        name="保养二级",
+        freq=Freq.LOW,
+        icon="mdi:oil-level",
+        category="保养",
+        diagnostic=True,
+    ),
+    # ---- 座椅门干涉 ----
+    "seat_l_door_interference": SignalSpec(
+        key="seat_l_door_interference",
+        path="Vehicle.Body.SeatLDoor.InterferenceSts",
+        name="左座椅门干涉",
+        freq=Freq.MID,
+        icon="mdi:alert",
+        category="座椅",
+        diagnostic=True,
+    ),
+    "seat_r_door_interference": SignalSpec(
+        key="seat_r_door_interference",
+        path="Vehicle.Body.SeatRDoor.InterferenceSts",
+        name="右座椅门干涉",
+        freq=Freq.MID,
+        icon="mdi:alert",
+        category="座椅",
+        diagnostic=True,
+    ),
+    # ---- 冰箱预约 / 离车模式 ----
+    "fridge_reserve": SignalSpec(
+        key="fridge_reserve",
+        path="Vehicle.CarSettings.Xmode.ReserveFridge",
+        name="冰箱预约",
+        freq=Freq.MID,
+        icon="mdi:fridge-outline",
+        category="冰箱",
+    ),
+    "xmode": SignalSpec(
+        key="xmode",
+        path="Vehicle.CarSettings.MoveOffOnTime.Xmode",
+        name="离车模式",
+        freq=Freq.MID,
+        icon="mdi:car-off",
+        category="设置",
+    ),
+    # ---- 空调温度色 ----
+    "ac_temp_color": SignalSpec(
+        key="ac_temp_color",
+        path="Vehicle.Cabin.AC.FrtWindTempColor",
+        name="空调温度色",
+        freq=Freq.MID,
+        icon="mdi:palette",
+        category="空调",
+        diagnostic=True,
+    ),
+    # ---- 充电校准 / 位置 / 后负载 ----
+    "charge_calibration": SignalSpec(
+        key="charge_calibration",
+        path="Vehicle.VehInfo.CarCenter.ChargeManagement.ChargingCalibration",
+        name="充电校准",
+        freq=Freq.LOW,
+        icon="mdi:tune",
+        category="充电桩",
+        diagnostic=True,
+    ),
+    "charge_here": SignalSpec(
+        key="charge_here",
+        path="Vehicle.Powertrain.ChargingPile.ScheduledCharging.ChargeHere",
+        name="充电位置",
+        freq=Freq.LOW,
+        icon="mdi:map-marker",
+        category="充电桩",
+    ),
+    "rear_load_mode": SignalSpec(
+        key="rear_load_mode",
+        path="Vehicle.VehInfo.CarSettings.Maintain.RearLoadModeSetting",
+        name="后负载模式",
+        freq=Freq.LOW,
+        icon="mdi:weight",
+        category="设置",
+        diagnostic=True,
+    ),
+    # ---- 电池功率条 ----
+    "ress_power_bar_color": SignalSpec(
+        key="ress_power_bar_color",
+        path="Vehicle.Powertrain.Battery.RESSPowerBarCol",
+        name="电池功率条颜色",
+        freq=Freq.MID,
+        icon="mdi:palette-outline",
+        category="电池",
+        diagnostic=True,
+    ),
+    # ---- OGC（第三方充电桩）----
+    "ogc_charge_current": SignalSpec(
+        key="ogc_charge_current",
+        path="Vehicle.Powertrain.Battery.OGCChargeCurrent",
+        name="OGC 充电电流",
+        freq=Freq.MID,
+        unit="A",
+        icon="mdi:current-ac",
+        category="充电桩",
+    ),
+    "ogc_charge_voltage": SignalSpec(
+        key="ogc_charge_voltage",
+        path="Vehicle.Powertrain.Battery.OGCChargeVoltage",
+        name="OGC 充电电压",
+        freq=Freq.MID,
+        unit="V",
+        icon="mdi:sine-wave",
+        category="充电桩",
+    ),
+    "ogc_type": SignalSpec(
+        key="ogc_type",
+        path="Vehicle.Powertrain.ChargingPile.OGCType",
+        name="OGC 类型",
+        freq=Freq.LOW,
+        icon="mdi:ev-station",
+        category="充电桩",
+        diagnostic=True,
+    ),
 }
 
 # ═══════════════════════════════════════════════════════════════════════════

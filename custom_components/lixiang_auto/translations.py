@@ -62,6 +62,13 @@ VALUE_MAPS: dict[str, dict] = {
     "DoorLockStatus.TrunkDoor":       {0: "已上锁", 1: "已解锁"},
     "DoorLockStatus.FrontTrunkDoor":  {0: "已上锁", 1: "已解锁"},
     # ★ 2026-09-23 补充（task-14 高价值遗漏信号）
+    # ★ 2026-09-24 补充（新增信号的值翻译）
+    "RmtVirtualKeyAuthSts":   {0: "未授权", 1: "已授权"},
+    "ChargeHere":             {0: "不在充电位", 1: "在充电位"},
+    "OGCType":                {0: "未连接", 1: "国标", 2: "欧标", 3: "美标"},
+    "InterferenceSts":        {0: "正常", 1: "干涉"},
+    "FrtWindTempColor":       {0: "默认", 1: "冷色", 2: "暖色", 3: "中性"},
+    "RESSPowerBarCol":        {0: "绿色", 1: "黄色", 2: "红色"},
     "PowerBatteryType":       {0: "未知", 1: "三元锂", 2: "磷酸铁锂"},
     "OrderChargingMode":      {0: "未设置", 1: "按时间", 2: "按电价"},
     "MSG_DCDCFltLvl":         {0: "正常", 1: "一级故障", 2: "二级故障", 3: "三级故障"},

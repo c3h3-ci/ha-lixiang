@@ -153,8 +153,42 @@ class TestFreqEquivalence:
                 hi.add(p)
         return hi, mid, lo
 
+    # ★ 2026-09-24：手工补充的信号（不在 gen_signals 生成源里）
+    #   它们的 freq 是人工设定的，不适用"旧前缀规则"的等价性检查
+    MANUAL_KEYS = {
+        "virtual_key_auth", "vehicle_accounts", "provision_complete",
+        "provision_finish", "maint_engine_level2",
+        "seat_l_door_interference", "seat_r_door_interference",
+        "fridge_reserve", "xmode", "ac_temp_color", "charge_calibration",
+        "charge_here", "rear_load_mode", "ress_power_bar_color",
+        "ogc_charge_current", "ogc_charge_voltage", "ogc_type",
+    }
+    MANUAL_PATHS = {
+        "Vehicle.Cabin.RmtVirtualKeyAuthSts",
+        "Vehicle.Account.Cloud.VehicleAccounts",
+        "Vehicle.Provision.Process.Complete",
+        "Vehicle.Provision.Process.FinishSuccess",
+        "Vehicle.Carcenter.Maintain.enginelevel2",
+        "Vehicle.Body.SeatLDoor.InterferenceSts",
+        "Vehicle.Body.SeatRDoor.InterferenceSts",
+        "Vehicle.CarSettings.Xmode.ReserveFridge",
+        "Vehicle.CarSettings.MoveOffOnTime.Xmode",
+        "Vehicle.Cabin.AC.FrtWindTempColor",
+        "Vehicle.VehInfo.CarCenter.ChargeManagement.ChargingCalibration",
+        "Vehicle.Powertrain.ChargingPile.ScheduledCharging.ChargeHere",
+        "Vehicle.VehInfo.CarSettings.Maintain.RearLoadModeSetting",
+        "Vehicle.Powertrain.Battery.RESSPowerBarCol",
+        "Vehicle.Powertrain.Battery.OGCChargeCurrent",
+        "Vehicle.Powertrain.Battery.OGCChargeVoltage",
+        "Vehicle.Powertrain.ChargingPile.OGCType",
+    }
+
     def test_grouping_matches_prefix_rules(self):
-        """用真实的旧前缀规则验证分组一致"""
+        """用真实的旧前缀规则验证分组一致
+
+        ⚠️ 2026-09-24：手工补充的信号豁免此检查
+          （它们不在 gen_signals 的生成源里，freq 是人工设定）
+        """
         import re
         from pathlib import Path
 
@@ -187,9 +221,13 @@ class TestFreqEquivalence:
         mid_new = {s.path for s in sg.by_freq(sg.Freq.MID)}
         lo_new = {s.path for s in sg.by_freq(sg.Freq.LOW)}
 
-        assert hi_new == hi_old, f"HIGH 分组不一致: {hi_new ^ hi_old}"
-        assert mid_new == mid_old, f"MID 分组不一致: {mid_new ^ mid_old}"
-        assert lo_new == lo_old, f"LOW 分组不一致: {lo_new ^ lo_old}"
+        exc = self.MANUAL_PATHS
+        assert hi_new - exc == hi_old - exc, \
+            f"HIGH 分组不一致: {(hi_new - exc) ^ (hi_old - exc)}"
+        assert mid_new - exc == mid_old - exc, \
+            f"MID 分组不一致: {(mid_new - exc) ^ (mid_old - exc)}"
+        assert lo_new - exc == lo_old - exc, \
+            f"LOW 分组不一致: {(lo_new - exc) ^ (lo_old - exc)}"
 
     def test_all_vss_paths_covered(self):
         """★ signals.py 必须覆盖 const.py 的所有路径（否则轮询会漏）"""
@@ -255,10 +293,23 @@ class TestDescriptionEquivalence:
             if not src[line_start:m.start()].strip().startswith("#"):
                 old.add(m.group(1))
         new = {s.key for s in sg.specs_for("sensor")}
-        # ★ online_status 是手写的 EntityDescription（不在 _mk 表里），
-        #   但已在 signals.py 声明 → 差异只剩它
-        assert (old | {"online_status"}) == new, (
-            f"多了: {new - old - {'online_status'}}\n少了: {old - new}")
+        # ★ 2026-09-24：新增信号不在旧 _mk 表里（那表已废弃，不用于创建实体）
+        #   这些是【新增】的，不是"多余"的
+        NEW_KEYS = {
+            "online_status",                    # 虚拟信号
+            "virtual_key_auth", "vehicle_accounts",
+            "provision_complete", "provision_finish",
+            "maint_engine_level2",
+            "seat_l_door_interference", "seat_r_door_interference",
+            "fridge_reserve", "xmode", "ac_temp_color",
+            "charge_calibration", "charge_here", "rear_load_mode",
+            "ress_power_bar_color",
+            "ogc_charge_current", "ogc_charge_voltage", "ogc_type",
+        }
+        extra = new - old - NEW_KEYS
+        missing = old - new
+        assert not extra, f"多了（未预期的 key）: {extra}"
+        assert not missing, f"少了: {missing}"
 
     def test_names_match(self):
         old = self._old_mk_table()
