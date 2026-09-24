@@ -44,6 +44,11 @@ _LOGGER = logging.getLogger(LOGGER_NAME)
 
 CMD_AC = "remoteVehACSmartControl"
 DEFAULT_LEVEL = 1          # 开启时的默认档位 (0=关, 1-3)
+
+# ★ 2026-09-24 新增：乐观更新有效期（秒）
+#   发命令后车机上报有延迟，这段时间用乐观值显示，
+#   避免"刚打开就显示关闭"。
+OPTIMISTIC_TTL = 45.0
 DEFAULT_TIMEOUT = "40"     # 运行时长(分钟)
 DEFAULT_TEMP = 22.5
 
@@ -179,6 +184,8 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
         self._attr_unique_id = f"{DOMAIN}_{self._rid}_sw_{suffix}"
         self._attr_device_info = device_info
         self._optimistic_on: bool | None = None
+        # ★ 乐观值有效期（monotonic 时间戳）
+        self._optimistic_until: float = 0.0
         self._last_result: dict | None = None
 
     @property
@@ -191,27 +198,47 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
             其他（5 已停止 / 7 告警 / 15 未插枪 等）→ off
           依据：App 的 XChargeDataHandle.getChargeState()
         """
+        import time as _t
+
         sig = (self.coordinator.data or {}).get("vss", {}).get(self._state_key)
+        vss_val: bool | None = None
+
         if sig and sig.get("value") is not None:
             v = sig["value"]
             if self._control_type == "__CHARGING__":
                 try:
-                    return int(float(v)) == 3      # 3 = 充电中
+                    vss_val = int(float(v)) == 3      # 3 = 充电中
                 except (TypeError, ValueError):
-                    return None
-            if self._control_type == "__SENTRY__":
+                    vss_val = None
+            elif self._control_type == "__SENTRY__":
                 # ★ 哨兵状态是 JSON：{"sentinelSwitch": 0/1}
                 import json as _json
                 try:
                     o = _json.loads(v) if isinstance(v, str) else v
-                    return bool(int(o.get("sentinelSwitch", 0)))
+                    vss_val = bool(int(o.get("sentinelSwitch", 0)))
                 except (ValueError, TypeError, AttributeError):
-                    return None
-            try:
-                return int(float(v)) != 0
-            except (TypeError, ValueError):
-                return bool(v)
-        return self._optimistic_on
+                    vss_val = None
+            else:
+                try:
+                    vss_val = int(float(v)) != 0
+                except (TypeError, ValueError):
+                    vss_val = bool(v)
+
+        # ★ 2026-09-24 修复（用户反馈座椅档位切换后显示"关闭"）：
+        #   原逻辑 VSS 优先，但 VSS 上报有延迟 →
+        #   发命令后立刻拉 VSS（旧值）→ 显示错误状态。
+        #
+        #   新逻辑（乐观更新带 TTL）：
+        #     ① 乐观值未过期 且 与 VSS 不一致 → 用乐观值
+        #     ② 一致或过期 → 清除乐观值，用 VSS
+        if self._optimistic_on is not None:
+            if _t.monotonic() < self._optimistic_until:
+                if vss_val is None or vss_val != self._optimistic_on:
+                    return self._optimistic_on
+            self._optimistic_on = None
+            self._optimistic_until = 0.0
+
+        return vss_val
 
     @property
     def extra_state_attributes(self) -> dict:
@@ -266,6 +293,9 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
                 self._api.send_command, cmd_key, cmd_data)
             self._last_result = res
             self._optimistic_on = level != 0
+            # ★ 记录有效期起点
+            import time as _t2
+            self._optimistic_until = _t2.monotonic() + OPTIMISTIC_TTL
             _LOGGER.info("车控 %s %s 已执行: %s", cmd_key, cmd_data, res)
         except Exception as err:  # noqa: BLE001
             _LOGGER.error("车控 %s %s 失败: %s", cmd_key, cmd_data, err)

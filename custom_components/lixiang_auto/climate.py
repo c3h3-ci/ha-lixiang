@@ -49,6 +49,11 @@ CMD_AC = "remoteVehACSmartControl"
 MIN_TEMP = 16
 MAX_TEMP = 30
 DEFAULT_TEMP = 26
+
+# ★ 2026-09-24 新增：乐观更新有效期（秒）
+#   发命令后车机上报有延迟，期间用乐观值显示，
+#   避免"刚设置就显示回旧值"。
+OPTIMISTIC_TTL = 45.0
 TARGET_STEP = 1.0
 # 空调运行倒计时（分钟，字符串）
 AC_COUNTDOWN = "15"
@@ -112,6 +117,7 @@ class LiCarClimate(CoordinatorEntity, ClimateEntity):
         self._optimistic_on: bool | None = None
         self._optimistic_mode: HVACMode | None = None
         self._optimistic_temp: float | None = None
+        self._optimistic_until: float = 0.0
         self._last_result: dict | None = None
 
     # ---------- 状态读取 ----------
@@ -182,15 +188,28 @@ class LiCarClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def target_temperature(self) -> float | None:
-        """设定温度 (车辆信号优先, 回退到刚下发的值)."""
-        val = self._sig(KEY_SET_TEMP)
+        """设定温度.
+
+        ★ 2026-09-24 修复：乐观更新带 TTL
+          （原先"VSS 优先"，设置后立刻被旧值覆盖）
+        """
+        import time as _t
+
+        vss_t: float | None = None
         try:
-            t = float(val)
+            t = float(self._sig(KEY_SET_TEMP))
             if MIN_TEMP <= t <= MAX_TEMP:
-                return t
+                vss_t = t
         except (TypeError, ValueError):
             pass
-        return self._optimistic_temp if self._optimistic_temp is not None else DEFAULT_TEMP
+
+        if self._optimistic_temp is not None:
+            if _t.monotonic() < self._optimistic_until:
+                if vss_t is None or abs(vss_t - self._optimistic_temp) > 0.1:
+                    return self._optimistic_temp
+            self._optimistic_temp = None
+
+        return vss_t if vss_t is not None else DEFAULT_TEMP
 
     @property
     def extra_state_attributes(self) -> dict:
@@ -234,6 +253,8 @@ class LiCarClimate(CoordinatorEntity, ClimateEntity):
         await self._dispatch(cmd_data)
         self._optimistic_on = False
         self._optimistic_mode = HVACMode.OFF
+        import time as _t1
+        self._optimistic_until = _t1.monotonic() + OPTIMISTIC_TTL
 
     @require_control
     async def async_set_temperature(self, **kwargs: Any) -> None:
@@ -243,6 +264,8 @@ class LiCarClimate(CoordinatorEntity, ClimateEntity):
             return
         temp = max(MIN_TEMP, min(MAX_TEMP, float(temp)))
         self._optimistic_temp = temp
+        import time as _t2
+        self._optimistic_until = _t2.monotonic() + OPTIMISTIC_TTL
         running = self._ac_running()
         if self._optimistic_on is False or running is False:
             # 空调当前关闭 → 只记录温度, 等用户开机时下发
@@ -262,6 +285,8 @@ class LiCarClimate(CoordinatorEntity, ClimateEntity):
         self._optimistic_on = True
         self._optimistic_mode = mode if mode not in (None, HVACMode.OFF) else HVACMode.COOL
         self._optimistic_temp = temp
+        import time as _t3
+        self._optimistic_until = _t3.monotonic() + OPTIMISTIC_TTL
 
     async def _dispatch(self, cmd_data: dict) -> None:
         try:

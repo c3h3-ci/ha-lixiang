@@ -33,6 +33,12 @@ CMD_AC = "remoteVehACSmartControl"
 DEFAULT_TEMP = 22.5
 DEFAULT_LEVEL = 3  # 打开默认高档
 
+# ★ 2026-09-24 新增：乐观更新的有效期（秒）
+#   发命令后，车机上报状态有延迟（几秒~几十秒）。
+#   在这段时间内如果 VSS 还没跟上，就用乐观值显示，
+#   避免"刚打开就显示关闭"的问题。
+OPTIMISTIC_TTL = 45.0
+
 # 低→中→高（HA fan 百分比 ordered list）
 _ORDERED_SPEEDS = ["low", "medium", "high"]
 _LEVEL_TO_PERCENT = {1: 33, 2: 66, 3: 100}
@@ -192,6 +198,8 @@ class LiCarSeatFan(CoordinatorEntity, FanEntity):
         self._attr_unique_id = f"{DOMAIN}_{self._rid}_fan_{suffix}"
         self._attr_device_info = device_info
         self._optimistic_level: int | None = None
+        # ★ 乐观值有效期（monotonic 时间戳）
+        self._optimistic_until: float = 0.0
         self._last_result: dict | None = None
         # 再写一次，防止 super 里被覆盖
         self._attr_supported_features = _SEAT_FAN_FEATURES
@@ -205,13 +213,34 @@ class LiCarSeatFan(CoordinatorEntity, FanEntity):
 
     @property
     def current_level(self) -> int:
+        """当前档位（0=关, 1-3）。
+
+        ★ 2026-09-24 修复（用户反馈"打开开关默认3档，
+          在其他地方切换成1档就显示关闭了"）：
+
+          问题：原逻辑【VSS 优先】，但 VSS 上报有延迟。
+                发命令后立刻拉 VSS（还是旧值 0）→ 显示关闭。
+
+          新逻辑（乐观更新带 TTL）：
+            ① 乐观值未过期 且 与 VSS 不一致 → 用乐观值（保持显示）
+            ② 乐观值与 VSS 一致 → 清掉乐观值，用 VSS
+            ③ 超过 TTL → 无条件用 VSS（以服务端为准）
+        """
+        import time as _t
+
         vss = _seat_level_from_vss(
             (self.coordinator.data or {}).get("vss") or {}, self._state_key)
-        if vss is not None:
-            return vss
+
         if self._optimistic_level is not None:
-            return self._optimistic_level
-        return 0
+            if _t.monotonic() < self._optimistic_until:
+                # 乐观窗口内：VSS 未追上就继续用乐观值
+                if vss is None or vss != self._optimistic_level:
+                    return self._optimistic_level
+            # 已一致或已过期 → 清除乐观状态
+            self._optimistic_level = None
+            self._optimistic_until = 0.0
+
+        return vss if vss is not None else 0
 
     @property
     def percentage(self) -> int | None:
@@ -304,7 +333,12 @@ class LiCarSeatFan(CoordinatorEntity, FanEntity):
                 self._api.send_command, CMD_AC, cmd_data)
             self._last_result = res
             self._optimistic_level = max(0, min(3, level))
-            _LOGGER.info("车控 %s 已执行: %s", cmd_data, res)
+            # ★ 记录有效期起点（TTL 内保持乐观显示）
+            import time as _t2
+            self._optimistic_until = _t2.monotonic() + OPTIMISTIC_TTL
+            _LOGGER.info("车控 %s 已执行: %s（乐观值 %d，%d秒内优先）",
+                         cmd_data, res, self._optimistic_level,
+                         int(OPTIMISTIC_TTL))
         except Exception as err:  # noqa: BLE001
             _LOGGER.error("车控 %s 失败: %s", cmd_data, err)
             raise

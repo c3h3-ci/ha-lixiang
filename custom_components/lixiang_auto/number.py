@@ -44,6 +44,9 @@ CMD_AC = "remoteVehACSmartControl"
 AC_TYPE_FRONT = "frtACSw"
 AC_COUNTDOWN = "15"
 
+# ★ 2026-09-24 新增：乐观更新有效期（秒）
+OPTIMISTIC_TTL = 45.0
+
 AC_MIN_TEMP = 16
 AC_MAX_TEMP = 30
 
@@ -120,17 +123,34 @@ class LiCarNumber(CoordinatorEntity, NumberEntity):
         if device_class is not None:
             self._attr_device_class = device_class
         self._optimistic_value: float | None = None
+        self._optimistic_until: float = 0.0
         self._last_result: dict | None = None
 
     @property
     def native_value(self) -> float | None:
+        """★ 2026-09-24：乐观更新带 TTL（同 fan/switch 的修复）
+
+        避免"设置后立即被旧 VSS 值覆盖"。
+        """
+        import time as _t
+
+        vss_val: float | None = None
         sig = (self.coordinator.data or {}).get("vss", {}).get(self._state_key)
         if sig and sig.get("value") is not None:
             try:
-                return float(sig["value"])
+                vss_val = float(sig["value"])
             except (TypeError, ValueError):
-                pass
-        return self._optimistic_value
+                vss_val = None
+
+        if self._optimistic_value is not None:
+            if _t.monotonic() < self._optimistic_until:
+                # 数值型：允许小误差（0.1）
+                if vss_val is None or abs(vss_val - self._optimistic_value) > 0.1:
+                    return self._optimistic_value
+            self._optimistic_value = None
+            self._optimistic_until = 0.0
+
+        return vss_val
 
     @property
     def extra_state_attributes(self) -> dict:
@@ -147,6 +167,8 @@ class LiCarNumber(CoordinatorEntity, NumberEntity):
                 self._api.send_command, self._cmd_key, cmd_data)
             self._last_result = res
             self._optimistic_value = float(value)
+            import time as _t2
+            self._optimistic_until = _t2.monotonic() + OPTIMISTIC_TTL
             _LOGGER.info("车控 %s %s 已执行: %s", self._cmd_key, cmd_data, res)
         except Exception as err:  # noqa: BLE001
             _LOGGER.error("车控 %s %s 失败: %s", self._cmd_key, cmd_data, err)

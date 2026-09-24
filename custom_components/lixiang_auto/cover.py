@@ -41,6 +41,11 @@ _LOGGER = logging.getLogger(LOGGER_NAME)
 _WIN_KEYS = ("flWindPosi", "frWindPosi", "rlWindPosi", "rrWindPosi")
 _WIN_STATE_KEYS = ("window_main", "window_copilot", "window_back_left", "window_back_right")
 _TRUNK_STATE_KEY = "door_trunk"
+
+# ★ 2026-09-24 新增：乐观更新有效期（秒）
+#   尾门/车窗开合需要几秒~几十秒，期间 VSS 未跟上，
+#   用乐观值显示避免"刚点开就显示关闭"。
+OPTIMISTIC_TTL = 45.0
 CMD_PLG = "remoteVehPlgControl"
 CMD_WDW = "remoteVehWdwControl"
 
@@ -101,15 +106,26 @@ class LiCarTrunkCover(CoordinatorEntity, CoverEntity):
         self._attr_device_info = device_info
         self._last_result: dict | None = None
         self._optimistic_closed: bool | None = None
+        self._optimistic_until: float = 0.0
 
     @property
     def is_closed(self) -> bool | None:
+        """★ 2026-09-24：乐观更新带 TTL（同 fan/switch/number 修复）"""
+        import time as _t
+
         vss = (self.coordinator.data or {}).get("vss") or {}
         v = _sig_num(vss, _TRUNK_STATE_KEY)
-        if v is None:
-            return self._optimistic_closed
         # DoorSwitchStatus.TrunkDoor: 1=开, 0/2/3=关
-        return v != 1
+        vss_closed: bool | None = None if v is None else (v != 1)
+
+        if self._optimistic_closed is not None:
+            if _t.monotonic() < self._optimistic_until:
+                if vss_closed is None or vss_closed != self._optimistic_closed:
+                    return self._optimistic_closed
+            self._optimistic_closed = None
+            self._optimistic_until = 0.0
+
+        return vss_closed
 
     @property
     def extra_state_attributes(self) -> dict:
@@ -132,6 +148,8 @@ class LiCarTrunkCover(CoordinatorEntity, CoverEntity):
                 self._api.send_command, CMD_PLG, cmd_data)
             self._last_result = res
             self._optimistic_closed = closed
+            import time as _t
+            self._optimistic_until = _t.monotonic() + OPTIMISTIC_TTL
             _LOGGER.info("车控 %s %s 已执行: %s", CMD_PLG, cmd_data, res)
         except Exception as err:  # noqa: BLE001
             _LOGGER.error("车控 %s %s 失败: %s", CMD_PLG, cmd_data, err)
@@ -171,6 +189,7 @@ class LiCarWindowCover(CoordinatorEntity, CoverEntity):
         self._last_result: dict | None = None
         # optimistic 存 HA position（0关…100开，与物理一致）
         self._optimistic_pos: int | None = None
+        self._optimistic_until: float = 0.0
 
     def _physical_open_pct(self) -> float | None:
         """物理开度 0=全关 … ~99=全开；无信号返回 None。"""
@@ -186,19 +205,30 @@ class LiCarWindowCover(CoordinatorEntity, CoverEntity):
 
     @property
     def physical_open_percent(self) -> int | None:
-        """物理开度（0关…100开），供诊断用。"""
-        p = self._physical_open_pct()
-        if p is None:
-            return self._optimistic_pos
-        return int(round(p))
+        """物理开度（0关…100开），供诊断用。
+
+        ★ 2026-09-24：改为复用 current_cover_position（含 TTL 乐观逻辑），
+          避免两处逻辑不一致。
+        """
+        return self.current_cover_position
 
     @property
     def current_cover_position(self) -> int | None:
+        """★ 2026-09-24：乐观更新带 TTL（同 fan/switch/number 修复）"""
+        import time as _t
+
         p = self._physical_open_pct()
-        if p is None:
-            return self._optimistic_pos
-        # 标准：物理开度即 position（支持部分开）
-        return int(round(p))
+        vss_pos = None if p is None else int(round(p))
+
+        if self._optimistic_pos is not None:
+            if _t.monotonic() < self._optimistic_until:
+                # 车窗开合较慢，允许 3% 误差
+                if vss_pos is None or abs(vss_pos - self._optimistic_pos) > 3:
+                    return self._optimistic_pos
+            self._optimistic_pos = None
+            self._optimistic_until = 0.0
+
+        return vss_pos
 
     @property
     def is_closed(self) -> bool | None:
@@ -265,6 +295,8 @@ class LiCarWindowCover(CoordinatorEntity, CoverEntity):
                 self._api.send_command, CMD_WDW, cmd_data)
             self._last_result = res
             self._optimistic_pos = max(0, min(100, physical_posi))
+            import time as _t2
+            self._optimistic_until = _t2.monotonic() + OPTIMISTIC_TTL
             _LOGGER.info("车控 %s %s 已执行: %s", CMD_WDW, cmd_data, res)
         except Exception as err:  # noqa: BLE001
             _LOGGER.error("车控 %s %s 失败: %s", CMD_WDW, cmd_data, err)
