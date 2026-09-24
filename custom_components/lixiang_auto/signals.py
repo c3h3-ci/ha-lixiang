@@ -730,6 +730,9 @@ SIGNALS: dict[str, SignalSpec] = {
         freq=Freq.MID,
         icon="mdi:progress-clock",
         category="泊车",
+        # ★ 2026-09-24 改诊断类：值恒为 0 且时间戳停留在 2026-09-21，实际无变化
+        #   （泊车状态在 App 里走【实时事件通道】，VSS 拿不到）
+        diagnostic=True,
     ),
     "park_status": SignalSpec(
         key="park_status",
@@ -738,6 +741,9 @@ SIGNALS: dict[str, SignalSpec] = {
         freq=Freq.LOW,
         icon="mdi:parking",
         category="泊车",
+        # ★ 2026-09-24 改诊断类：服务端从不返回该信号（value 恒为 None），实体永远是 unknown
+        #   （泊车状态在 App 里走【实时事件通道】，VSS 拿不到）
+        diagnostic=True,
     ),
     "privacy_pos_service": SignalSpec(
         key="privacy_pos_service",
