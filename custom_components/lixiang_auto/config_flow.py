@@ -456,9 +456,16 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         cur_base = getattr(self, "_user_base_url", None) or self._base_url()
 
+        # ★ url_abs 必须是一个【完整可点击】的地址
+        #   若推断不出绝对地址，用相对路径兜底（浏览器可能仍能打开）
+        abs_first = abs_urls[0] if abs_urls else ""
+        if not abs_first:
+            # 退化：用猜到的 base + 相对路径
+            abs_first = f"{cur_base}/lixiang-login?token={tok}"
+
         return {
             "url": rel_url,
-            "url_abs": abs_urls[0] if abs_urls else rel_url,
+            "url_abs": abs_first,
             "url_alt": alt,
             "token": tok,
             "base_url": cur_base,
