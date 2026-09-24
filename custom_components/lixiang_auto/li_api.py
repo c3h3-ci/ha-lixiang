@@ -170,9 +170,9 @@ class LiApiClient:
         device_id: str | None = None,
         refresh_token: str = "",
     ) -> None:
-        self._phone = str(phone or "")
-        self._password = str(password or "")
-        self._vin = str(vin or "")
+        self._phone = str(phone) if phone is not None else ""
+        self._password = str(password) if password is not None else ""
+        self._vin = str(vin) if vin is not None else ""
         # ★ 2026-09-24 修复（严重 bug）：
         #   secrets 模块的 _LazySecret 是 str 子类，构造时内容为空，
         #   真实值靠 __str__() 延迟求值。
@@ -183,10 +183,10 @@ class LiApiClient:
         #
         #   ★ 必须显式 str() 强制求值。
         self._hac = _hac_key_bytes(hac_key)
-        self._key_id = str(key_id or "")
-        self._xdev = str(xdev or "")   # x-chj 签名身份 (与 hac_key 绑定的设备)
-        self._app_token = str(app_token or "")
-        self._refresh_token = str(refresh_token or "")
+        self._key_id = str(key_id) if key_id is not None else ""
+        self._xdev = str(xdev) if xdev is not None else ""   # x-chj 签名身份 (与 hac_key 绑定的设备)
+        self._app_token = str(app_token) if app_token is not None else ""
+        self._refresh_token = str(refresh_token) if refresh_token is not None else ""
         self._cli: LixiangDirectLogin | None = None
         if device_id:
             self._device_id = device_id
@@ -696,8 +696,11 @@ def _hac_key_bytes(hac_key: str) -> bytes:
 
       修复：先显式 str() 强制求值，再做后续处理。
     """
-    # ★ 关键：先转成真正的 str（触发 _LazySecret.__str__）
-    s = str(hac_key or "").strip()
+    # ★ 关键修复（2026-09-24 第二次修正）：
+    #   不能用 `hac_key or ""` —— `or` 会触发 _LazySecret.__bool__()，
+    #   而它基于【底层空内容】返回 False → 直接走 "" 分支！
+    #   必须用 `is not None` 判断，再 str() 强制求值。
+    s = str(hac_key).strip() if hac_key is not None else ""
     if len(s) == 64:
         try:
             return bytes.fromhex(s)
