@@ -246,18 +246,31 @@ class LiCarSeatFan(CoordinatorEntity, FanEntity):
         return attrs
 
     @require_control
-    async def async_turn_on(self, percentage: int | None = None, **kwargs: Any) -> None:
+    async def async_turn_on(
+        self,
+        percentage: int | None = None,
+        preset_mode: str | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """打开座椅加热/通风.
+
+        ★ 2026-09-24 修复 bug（用户反馈"加热出错"）：
+          HA 的 FanEntity 内部调用约定是：
+            await self.async_turn_on(percentage, preset_mode, **kwargs)
+          ★ 两个【位置参数】！
+          原签名只有 (percentage, **kwargs) → TypeError:
+            "takes from 1 to 2 positional arguments but 3 were given"
+
+          依据：homeassistant/components/fan/__init__.py:315
+        """
         if percentage is not None:
             level = _percent_to_level(percentage)
             if level <= 0:
                 level = DEFAULT_LEVEL
+        elif preset_mode in _ORDERED_SPEEDS:
+            level = _ORDERED_SPEEDS.index(preset_mode) + 1
         else:
-            # 预设模式
-            preset = kwargs.get("preset_mode")
-            if preset in _ORDERED_SPEEDS:
-                level = _ORDERED_SPEEDS.index(preset) + 1
-            else:
-                level = DEFAULT_LEVEL
+            level = DEFAULT_LEVEL
         await self._send(level)
 
     @require_control
