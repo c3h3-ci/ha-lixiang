@@ -47,7 +47,10 @@ _LOGGER = logging.getLogger(LOGGER_NAME)
 BUTTONS = (
     ("veh_search", "寻车", "mdi:car-search",
      "remoteVehSearch", {"searchType": "0"}, False),
-    ("engine_start", "远程启动", "mdi:engine",
+    # ★ 2026-09-24 改名（用户要求）：远程启动 → 远程授权
+    #   依据：App 的实现类是 XHttpRemoteStartControl，
+    #        但 cmdKey 是 remoteVehAuth（Auth = 授权驾驶/启动授权）
+    ("engine_start", "远程授权", "mdi:key-chain",
      "remoteVehAuth", {}, True),
     # ★ 2026-09-24 补充：其余 App 支持的车控
     #   参数来源：MControlKeyConst + 车控命令全集报告
