@@ -960,7 +960,7 @@ SIGNALS: dict[str, SignalSpec] = {
         name="哨兵开关",
         freq=Freq.HIGH,
         icon="mdi:shield-check",
-        platforms=frozenset({'binary_sensor'}),
+        platforms=frozenset(),  # ★ 2026-09-24：改由 switch 平台提供
         semantics=Semantics.JSON_FIELD,
         json_field="sentinelSwitch",
     ),

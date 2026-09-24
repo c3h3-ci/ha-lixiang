@@ -120,6 +120,11 @@ SWITCHES = (
     #   ⚠️ 状态读取用 charge_status（ChargeStatus == 3 → 充电中）
     ("charging", "充电", "mdi:battery-charging",
      "charge_status", "__CHARGING__", "充电"),
+    # ★ 2026-09-24 新增（用户建议）：哨兵从两个 button 改为一个 switch
+    #   状态源：sentry_switch = SettingsStatus.sentinelSwitch（可靠）
+    #   命令：sentinelModeSetting {"sentinelSwitch":0/1}
+    ("sentry", "哨兵模式", "mdi:shield-car",
+     "sentry_switch", "__SENTRY__", "哨兵"),
 )
 
 
@@ -194,6 +199,14 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
                     return int(float(v)) == 3      # 3 = 充电中
                 except (TypeError, ValueError):
                     return None
+            if self._control_type == "__SENTRY__":
+                # ★ 哨兵状态是 JSON：{"sentinelSwitch": 0/1}
+                import json as _json
+                try:
+                    o = _json.loads(v) if isinstance(v, str) else v
+                    return bool(int(o.get("sentinelSwitch", 0)))
+                except (ValueError, TypeError, AttributeError):
+                    return None
             try:
                 return int(float(v)) != 0
             except (TypeError, ValueError):
@@ -235,6 +248,15 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
         if self._control_type == "__CHARGING__":
             cmd_key = "remote_charging_start" if level != 0 else "remote_charging_stop"
             cmd_data: dict = {}
+        elif self._control_type == "__SENTRY__":
+            # ★ 哨兵：cmdKey = sentinelModeSetting
+            #   ⚠️ 时间戳字段拼写是 "timestap"（少一个 m）—— App 就这么拼，必须照抄
+            import time as _t
+            cmd_key = "sentinelModeSetting"
+            cmd_data = {
+                "sentinelSwitch": 1 if level != 0 else 0,
+                "timestap": int(_t.time() * 1000),
+            }
         else:
             cmd_key = CMD_AC
             cmd_data = _custom(self._control_type, level)

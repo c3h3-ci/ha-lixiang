@@ -58,13 +58,9 @@ BUTTONS = (
     # 鸣笛（searchType=2，Integer）
     ("whistle", "鸣笛", "mdi:bullhorn",
      "remoteVehSearch", {"searchType": 2}, False),
-    # 哨兵开启
-    #   ⚠️ 时间戳字段拼写是 "timestap"（少一个 m）—— App 就这么拼，必须照抄
-    ("sentry_on", "开启哨兵", "mdi:shield-car",
-     "sentinelModeSetting", {"sentinelSwitch": 1}, True),
-    # 哨兵关闭
-    ("sentry_off", "关闭哨兵", "mdi:shield-off",
-     "sentinelModeSetting", {"sentinelSwitch": 0}, True),
+    # ★ 2026-09-24 移除哨兵开关按钮（用户建议）：
+    #   改用 switch.sentry（有状态可读），见 switch.py
+    #   （SettingsStatus.sentinelSwitch 能读到当前状态）
     # 远程拍照
     #   ⚠️ 同样用 "timestap"；vehImage 固定 "veh_svm_image"
     ("svm_photo", "远程拍照", "mdi:camera",

@@ -388,7 +388,11 @@ class TestBinaryEquivalence:
     def test_same_key_set(self):
         old = set(self._old_binary_table())
         new = {s.key for s in sg.specs_for("binary_sensor")}
-        assert old == new, f"多了: {new - old}\n少了: {old - new}"
+        # ★ 2026-09-24：sentry_switch 改由 switch 平台提供
+        #   （原本 binary_sensor 哨兵开关与 switch 哨兵模式状态源重复）
+        MOVED_TO_SWITCH = {"sentry_switch"}
+        assert old - MOVED_TO_SWITCH == new, (
+            f"多了: {new - old}\n少了: {old - new - MOVED_TO_SWITCH}")
 
     def test_names_match(self):
         for key, o in self._old_binary_table().items():
