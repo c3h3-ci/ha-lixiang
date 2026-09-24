@@ -33,6 +33,7 @@ from __future__ import annotations
 import logging
 import os
 import secrets
+import uuid
 import time
 from typing import Any
 
@@ -41,7 +42,7 @@ from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN, LOGGER_NAME
+from .const import DOMAIN, LOGGER_NAME, ACCOUNT_BASE, AUDIENCE, CLIENT_ID
 
 _LOGGER = logging.getLogger(LOGGER_NAME)
 
@@ -58,8 +59,18 @@ def _gc() -> None:
 
 
 def create_session(phone: str, password: str, device_id: str) -> str:
-    """创建一个登录会话，返回 token。"""
+    """创建一个登录会话，返回 token。
+
+    ★ 2026-09-24（整合 shinnaluo 的 PR）：
+      device_id 不能为空 —— 空值会让理想官方登录页一直转圈（loading）。
+      若调用方传空，这里自动生成一个。
+    """
     _gc()
+    device_id = str(device_id or "").strip()
+    if not device_id:
+        device_id = uuid.uuid4().hex
+        _LOGGER.warning("create_session 收到空 device_id，已自动生成 %s",
+                        device_id[:12])
     tok = secrets.token_urlsafe(24)
     _SESSIONS[tok] = {
         "phone": phone,
@@ -119,17 +130,41 @@ class LiXiangLoginView(HomeAssistantView):
 
         # ★ 不在 HA 页面里嵌 iframe（会被 CORB/嵌入限制拦），
         #   改为提供【新窗口链接】，指向理想登录页并带上 HA 的 device_id
+        #
+        # ★ 2026-09-24 修复「一直转圈」（整合 shinnaluo 的 PR）：
+        #   · 必须带 mode=h5
+        #     /app-auth 默认 mode=app → 登录后会跳到 /login/App
+        #     （App WebView 桥接页），普通浏览器里永远停在 loading。
+        #   · audience 要用 pake 登录实测值（原来用的 VSS audience
+        #     会走错授权分支）
+        #   · scope 用 "iam:client:type:app openid"
+        from urllib.parse import urlencode
+
+        from .const import ACCOUNT_BASE
+
         dev = s["device_id"]
-        login_url = (
-            "https://account.lixiang.com/app-auth"
-            "?client_id=2AQClOaegaA7XecMSFx1p"
-            "&redirect_uri=https%3A%2F%2Faccount.lixiang.com%2Fapp-auth"
-            "&response_type=code&scope=login"
-            "&audience=1j0vgTqagJUHuT6nLmbTGx"
-            f"&device_id={dev}"
-        )
+        # 主链接：H5 模式 + 完整授权参数
+        login_url = ACCOUNT_BASE + "/app-auth?" + urlencode({
+            "mode": "h5",
+            "client_id": CLIENT_ID,
+            "redirect_uri": f"{ACCOUNT_BASE}/app-auth",
+            "response_type": "code",
+            "scope": "iam:client:type:app openid",
+            "audience": AUDIENCE,
+            "device_id": dev,
+        })
+        # 备用链接：同样 mode=h5，但不带 audience/scope
+        #   （authorize 参数异常导致卡住时用这条 → 走纯登录流程）
+        alt_url = ACCOUNT_BASE + "/app-auth?" + urlencode({
+            "mode": "h5",
+            "client_id": CLIENT_ID,
+            "redirect_uri": f"{ACCOUNT_BASE}/app-auth",
+            "response_type": "code",
+            "device_id": dev,
+        })
         html = (_load_login_html()
                 .replace("%%LOGIN_URL%%", login_url)
+                .replace("%%ALT_LOGIN_URL%%", alt_url)
                 .replace("%%DEVICE_ID%%", dev)
                 .replace("%%TOKEN%%", tok))
         return web.Response(text=html, content_type="text/html")

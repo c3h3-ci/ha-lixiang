@@ -100,29 +100,7 @@ def _custom(control_type: str, level: int) -> dict:
 SWITCHES = (
     ("wheel_heat", "方向盘加热", "mdi:steering",
      "wheel_heat", "strgWhlHeatSw", "方向盘加热"),
-    ("seat_fl_heat", "主驾座椅加热", "mdi:car-seat-heater",
-     "seat_fl_heat", "flSeatHeatSw", "座椅加热"),
-    ("seat_fr_heat", "副驾座椅加热", "mdi:car-seat-heater",
-     "seat_fr_heat", "frSeatHeatSw", "座椅加热"),
-    ("seat_fl_vent", "主驾座椅通风", "mdi:car-seat-cooler",
-     "seat_fl_vent", "flSeatVentSw", "座椅加热"),
-    ("seat_fr_vent", "副驾座椅通风", "mdi:car-seat-cooler",
-     "seat_fr_vent", "frSeatVentSw", "座椅加热"),
-    # ★ 2026-09-24 补充：二排座椅（L6 五座车的二排）
-    #   controlType 来源：VehicleControlModel$Companion（App 静态常量）
-    #     secLSeatHeatSw  二排左加热  ← App 有
-    #     secRSeatHeatSw  二排右加热  ← App 有
-    #   ⚠️ App 里【没有】二排通风的 controlType
-    #      但实测 SL/SRSeatVentilationState 信号很新鲜（09-23/09-24）
-    #      → 用同族命名尝试；若服务端拒绝则说明不支持
-    ("seat_sl_heat", "二排左座椅加热", "mdi:car-seat-heater",
-     "seat_sl_heat", "secLSeatHeatSw", "二排座椅"),
-    ("seat_sr_heat", "二排右座椅加热", "mdi:car-seat-heater",
-     "seat_sr_heat", "secRSeatHeatSw", "二排座椅"),
-    ("seat_sl_vent", "二排左座椅通风", "mdi:car-seat-cooler",
-     "seat_sl_vent", "secLSeatVentSw", "二排座椅"),
-    ("seat_sr_vent", "二排右座椅通风", "mdi:car-seat-cooler",
-     "seat_sr_vent", "secRSeatVentSw", "二排座椅"),
+
     # ★ 2026-09-24 补充：空调快捷功能
     #   controlType 来自 VehicleControlModel$Companion
     #   这三个是"白名单类"→ acCtrlValue 只用 "ON"/"OFF"

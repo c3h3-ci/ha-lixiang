@@ -259,15 +259,32 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     #         用户在页面里完成登录后，该 device_id 被服务端标记受信任，
     #         HA 后台轮询检测到信任 → 后续免 MFA。
     # ---------------------------------------------------------------
+    async def _ensure_login_views(self) -> None:
+        """确保 /lixiang-login 视图已注册。
+
+        ★ 2026-09-24（整合 shinnaluo 的 PR）：
+          config_flow 在【还没有 config entry】时运行，
+          此时 HA 不会调用 __init__.async_setup → 视图未注册 → 404。
+          这个兜底在浏览器登录步骤前确保视图就绪。
+        """
+        try:
+            from .auth_web import async_register_login_views
+            await async_register_login_views(self.hass)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("注册登录辅助页面失败: %s", err)
+
     async def async_step_browser(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """浏览器辅助登录：用户在自己浏览器里过滑动验证。
 
         流程：
-          ① 生成本地会话（token）→ 得到辅助页面 URL
-          ② 用户在页面里完成登录（滑 + 短信）
-          ③ HA 后台轮询用 device_id+密码 试登录
-          ④ 成功 → 继续建条目（保存 phone+password+device_id）
+          ① 确保 /lixiang-login 视图已注册
+          ② 生成本地会话（token）→ 得到辅助页面 URL
+          ③ 用户在页面里完成登录（滑 + 短信）
+          ④ HA 后台轮询用 device_id+密码 试登录
+          ⑤ 成功 → 继续建条目（保存 phone+password+device_id）
         """
+        # ★ 关键：确保视图已注册（首次配置时 async_setup 可能还没跑）
+        await self._ensure_login_views()
         from .auth_web import create_session, get_session, try_login
 
         pending = getattr(self, "_pending", None) or {}

@@ -58,7 +58,15 @@
     <a class="btn" id="openBtn" href="%%LOGIN_URL%%" target="_blank" rel="noopener">
       ▶ 点这里打开理想登录页
     </a>
-    <div class="hint">如果按钮没反应，请手动复制下面的地址到浏览器打开</div>
+    <!-- ★ 2026-09-24：备用链接（主链接卡住时用） -->
+    <a class="btn" id="altBtn" href="%%ALT_LOGIN_URL%%" target="_blank" rel="noopener"
+       style="margin-top:10px;background:#fff;color:#1677ff;border:1px solid #1677ff;">
+      ▶ 备用：直接打开 H5 登录页
+    </a>
+    <div class="hint">
+      如果按钮没反应，请手动复制下面的地址到浏览器打开<br>
+      <span style="color:#ad6800">若打开后一直转圈/空白：请清一下该站点缓存，或点「备用」登录地址，并核对「HA 访问地址」是否为你在用的地址</span>
+    </div>
     <div class="url" id="urlBox">%%LOGIN_URL%%</div>
 
     <div class="status wait" id="st">
@@ -71,9 +79,15 @@
 <script>
 const TOKEN = "%%TOKEN%%";
 const LOGIN_URL = "%%LOGIN_URL%%";
+const ALT_LOGIN_URL = "%%ALT_LOGIN_URL%%";
 let n = 0;
 
 // 点按钮后自动开始轮询
+document.getElementById('altBtn').addEventListener('click', () => {
+  document.getElementById('msg').textContent = '已打开备用登录页，请在新窗口里完成登录…';
+  startPoll();
+});
+
 document.getElementById('openBtn').addEventListener('click', () => {
   document.getElementById('msg').textContent = '已打开登录页，请在新窗口里完成登录…';
 });
@@ -81,7 +95,8 @@ document.getElementById('openBtn').addEventListener('click', () => {
 async function poll() {
   n++;
   try {
-    const r = await fetch("./lixiang-login/status?token=" + encodeURIComponent(TOKEN));
+    // ★ 用绝对路径：相对 ./lixiang-login/status 在带/不带尾斜杠时解析结果不同，会 404
+    const r = await fetch("/lixiang-login/status?token=" + encodeURIComponent(TOKEN));
     const j = await r.json();
     if (j.trusted) {
       const st = document.getElementById('st');

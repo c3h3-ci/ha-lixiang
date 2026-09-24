@@ -44,6 +44,9 @@ PLATFORMS: list[Platform] = [
     Platform.SENSOR, Platform.BINARY_SENSOR, Platform.DEVICE_TRACKER,
     Platform.LOCK, Platform.SWITCH, Platform.BUTTON, Platform.NUMBER,
     Platform.CLIMATE, Platform.SELECT, Platform.NOTIFY,
+    # ★ 2026-09-24 整合 shinnaluo 的 PR：
+    Platform.COVER,   # 尾门/车窗（HA 标准做法，替代 button）
+    Platform.FAN,     # 座椅加热/通风（档位 UI，替代 switch+number）
 ]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
