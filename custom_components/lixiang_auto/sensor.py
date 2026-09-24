@@ -238,8 +238,21 @@ FEATURE_BY_KEY_PREFIX: dict[str, str] = {
     "fridge": "冰箱",
     "sentry": "哨兵模式",
     "lock_front_trunk": "前备箱",
+    # ★ 2026-09-24 修复：座椅映射不完整
+    #   问题：L6（五座）也创建了三排座椅实体
+    #   原因：
+    #     ① "seat_tl"/"seat_tr"/"seat_tm"/"seat_sm" 缺映射 → 不受功能过滤
+    #     ② 服务端对不存在的三排硬件也返回 value=0 + 有效 ts
+    #        → 信号探测无法区分 → 必须靠车型判断
+    #
+    #   座椅代号：F=Front(前) S=Second(二排) T=Third(三排)
+    #             L=Left R=Right M=Middle
     "seat_sl": "二排座椅",
     "seat_sr": "二排座椅",
+    "seat_sm": "二排座椅",     # ★ 二排中（L6 有，L8/L9 无）
+    "seat_tl": "三排座椅",     # ★ 三排左（仅 L8/L9/MEGA）
+    "seat_tr": "三排座椅",     # ★ 三排右
+    "seat_tm": "三排座椅",     # ★ 三排中
     "wheel_heat": "方向盘加热",
     "spoiler": "电动尾翼",
     "suspension": "空气悬架",

@@ -302,6 +302,4 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
                 # 实时信号失败不拖垮静态数据 (也避免反复触发登录)
                 _LOGGER.warning("VSS 实时信号轮询失败: %s", err)
 
-        _LOGGER.warning("★ 轮询结束: vehicle_status=%r  vss条数=%d",
-                        data.get("vehicle_status"), len(data.get("vss") or {}))
         return data
