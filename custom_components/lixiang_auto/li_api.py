@@ -170,14 +170,23 @@ class LiApiClient:
         device_id: str | None = None,
         refresh_token: str = "",
     ) -> None:
-        self._phone = phone
-        self._password = password
-        self._vin = vin
+        self._phone = str(phone or "")
+        self._password = str(password or "")
+        self._vin = str(vin or "")
+        # ★ 2026-09-24 修复（严重 bug）：
+        #   secrets 模块的 _LazySecret 是 str 子类，构造时内容为空，
+        #   真实值靠 __str__() 延迟求值。
+        #   如果直接存对象（self._key_id = key_id），
+        #   后续用作 HTTP 头时可能拿到【空字符串】：
+        #     requests 对 str 子类可能不调用 __str__()
+        #   → 服务端报「缺少必要的请求参数: X-CHJ-Key,X-CHJ-Deviceid」
+        #
+        #   ★ 必须显式 str() 强制求值。
         self._hac = _hac_key_bytes(hac_key)
-        self._key_id = key_id
-        self._xdev = xdev          # x-chj 签名身份 (与 hac_key 绑定的设备)
-        self._app_token = app_token
-        self._refresh_token = refresh_token
+        self._key_id = str(key_id or "")
+        self._xdev = str(xdev or "")   # x-chj 签名身份 (与 hac_key 绑定的设备)
+        self._app_token = str(app_token or "")
+        self._refresh_token = str(refresh_token or "")
         self._cli: LixiangDirectLogin | None = None
         if device_id:
             self._device_id = device_id
@@ -671,8 +680,24 @@ class LiApiClient:
 
 
 def _hac_key_bytes(hac_key: str) -> bytes:
-    """hac_key 归一化: hex(64字符) / base64 / 原始串 → 原始 32 字节."""
-    s = (hac_key or "").strip()
+    """hac_key 归一化: hex(64字符) / base64 / 原始串 → 原始 32 字节.
+
+    ★ 2026-09-24 修复（严重 bug，导致 VIN 取不到 / 所有 API 报
+      「缺少必要的请求参数: X-CHJ-Key」）：
+
+      问题：secrets._LazySecret 是 str 子类，构造时内容为空字符串，
+            真实值靠 __str__() 延迟求值。
+            但 str 子类的 .strip() / len() 走的是【空内容】：
+              s = (hac_key or "").strip()   →  ""   （丢了真实值！）
+              len(s) == 64                  →  False
+              s.encode()                    →  b""  ❌
+
+            表现为：_hac 长度为 0 → 签名错误 → 服务端拒绝。
+
+      修复：先显式 str() 强制求值，再做后续处理。
+    """
+    # ★ 关键：先转成真正的 str（触发 _LazySecret.__str__）
+    s = str(hac_key or "").strip()
     if len(s) == 64:
         try:
             return bytes.fromhex(s)
