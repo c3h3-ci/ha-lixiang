@@ -33,26 +33,20 @@ from .entity_helper import route_id_of_vin
 _LOGGER = logging.getLogger(LOGGER_NAME)
 
 # 车窗四位置（前左/前右/后左/后右）
-_WIN_KEYS = ("flWindPosi", "frWindPosi", "rlWindPosi", "rrWindPosi")
 
-
-def _windows(pos: str) -> dict:
-    """构造四窗位置报文."""
-    return {k: pos for k in _WIN_KEYS}
 
 
 # (唯一后缀, 名称, 图标, cmdKey, cmdData, 是否等待结果)
+# ★ 2026-09-24 精简（用户反馈"开窗关窗开两个实体好像是多余的"）：
+#   删除了 4 个被 cover 替代的按钮：
+#     plg_open / plg_close      → cover.wei_men（尾门）
+#     window_open / window_close → cover.che_chuang（车窗）
+#
+#   HA 的 cover 域本身支持 open_cover / close_cover / stop_cover，
+#   且带状态读回 → 比两个 button 更符合惯例。
 BUTTONS = (
     ("veh_search", "寻车", "mdi:car-search",
      "remoteVehSearch", {"searchType": "0"}, False),
-    ("plg_open", "开尾门", "mdi:car-door",
-     "remoteVehPlgControl", {"plgPosi": "100"}, True),
-    ("plg_close", "关尾门", "mdi:car-door",
-     "remoteVehPlgControl", {"plgPosi": "0"}, True),
-    ("window_open", "开窗", "mdi:window-open",
-     "remoteVehWdwControl", _windows("99"), True),
-    ("window_close", "关窗", "mdi:window-closed",
-     "remoteVehWdwControl", _windows("0"), True),
     ("engine_start", "远程启动", "mdi:engine",
      "remoteVehAuth", {}, True),
     # ★ 2026-09-24 补充：其余 App 支持的车控
