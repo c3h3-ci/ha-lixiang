@@ -17,7 +17,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv, aiohttp_client
-from homeassistant.helpers.typing import ConfigType
 
 from .client import LiCarClient
 from .const import (

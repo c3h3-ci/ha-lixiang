@@ -232,7 +232,7 @@ def try_login(phone: str, password: str, device_id: str) -> bool:
     返回 True 表示登录成功（设备已受信任）。
     """
     try:
-        from .pake_login import LixiangDirectLogin, LoginError
+        from .pake_login import LixiangDirectLogin
     except ImportError:
         return False
     try:

@@ -28,7 +28,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from .const import DOMAIN, LOGGER_NAME
+from .const import LOGGER_NAME
 
 _LOGGER = logging.getLogger(LOGGER_NAME)
 

@@ -26,7 +26,7 @@
       },
       "sms": {
         "title": "SMS verification",
-        "description": "This device is not trusted yet. Complete the login in the helper page opened in your browser, then submit.",
+        "description": "Complete the login in your browser (slider captcha + SMS code), then press Submit.",
         "data": {
           "sms_code": "(This step now uses browser verification — can be left empty)"
         }

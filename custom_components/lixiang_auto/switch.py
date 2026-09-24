@@ -125,8 +125,13 @@ SWITCHES = (
     #     cmdData 本身是空 {}（由 send_command 注入 token 等）
     #   → 需要特殊处理（见 LiCarSwitch._send）
     #   ⚠️ 状态读取用 charge_status（ChargeStatus == 3 → 充电中）
-    ("charging", "充电", "mdi:battery-charging",
-     "charge_status", "__CHARGING__", "充电"),
+    # ★ 2026-09-24 移除充电启停开关（实测不可用）：
+    #   证据：
+    #     ① 实测 remote_charging_start / remote_charging_stop
+    #        均返回 pushState=7 resultCode=2009（执行失败）
+    #     ② 逆向报告：Android 版「充电设置」页面尚未实现
+    #     ③ 未插枪时服务端拒绝该类命令
+    #   → 保留会让用户点了报错，故移除。充电状态仍由 sensor 展示。
     # ★ 2026-09-24 新增（用户建议）：哨兵从两个 button 改为一个 switch
     #   状态源：sentry_switch = SettingsStatus.sentinelSwitch（可靠）
     #   命令：sentinelModeSetting {"sentinelSwitch":0/1}

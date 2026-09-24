@@ -24,7 +24,6 @@ import urllib.parse
 import urllib.request
 import uuid
 
-import requests
 
 from .policy import (
     POLICY_COMMAND,
