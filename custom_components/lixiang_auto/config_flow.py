@@ -201,7 +201,28 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             device_id = (user_input.get(CONF_DEVICE_ID)
                          or saved
                          or DEFAULT_DEVICE_ID)
+
+            # ★ 2026-09-24 修复（用户反馈"设备 ID 是空的"）：
+            #   上面三者都为空时必须【生成】一个随机 device_id，
+            #   否则 device_id = "" 会：
+            #     · 理想登录 URL 里 device_id= 空 → 页面可能转圈
+            #     · 登录后信任的是浏览器随机 id，不是 HA 的
+            #     · HA 永远登不上 → "提交不上去"
+            if not device_id:
+                import uuid as _uuid
+                device_id = _uuid.uuid4().hex
+                _LOGGER.info("未找到已保存的 device_id，生成新的: %s",
+                             device_id[:12])
+
             trusted = bool(saved or (device_id == DEFAULT_DEVICE_ID))
+
+            # ★ 立即持久化（供后续步骤 & 下次登录复用）
+            try:
+                store.set_device_id(phone, device_id, save=False)
+                if hasattr(store, "save"):
+                    store.save()
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("保存 device_id 失败: %s", err)
             _LOGGER.debug("登录使用 device_id=%s (受信任=%s)",
                           str(device_id)[:12], trusted)
 
@@ -291,6 +312,29 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         phone = pending.get("phone") or ""
         password = pending.get("password") or ""
         device_id = pending.get("device_id") or DEFAULT_DEVICE_ID
+
+        # ★ 2026-09-24 修复：device_id 为空时必须生成并【持久化】，
+        #   否则 try_login("") 会让 pake_login 自己生成随机的
+        #   → 与理想页面登录用的 device_id 不一致 → 永远检测不到信任。
+        if not device_id:
+            store = await get_store_async(self.hass)
+            device_id = store.get_device_id(phone) or ""
+            if not device_id:
+                import uuid as _uuid
+                device_id = _uuid.uuid4().hex
+                _LOGGER.info("browser 步骤生成 device_id: %s", device_id[:12])
+            if phone:
+                try:
+                    store.set_device_id(phone, device_id, save=True)
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.debug("保存 device_id 失败: %s", err)
+            # 回写 pending（后续步骤要用同一个）
+            pending["device_id"] = device_id
+            self._pending = pending
+
+        _LOGGER.info(
+            "浏览器登录步骤: device_id=%s  phone=%s****%s",
+            device_id[:12], phone[:3], phone[-4:] if len(phone) >= 4 else "")
 
         # ★ 用户填的 HA 访问地址（用于生成辅助页面 URL）
         if user_input and user_input.get("ha_base_url"):
