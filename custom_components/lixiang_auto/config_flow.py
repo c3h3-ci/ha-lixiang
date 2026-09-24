@@ -358,45 +358,94 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return None
 
     def _base_url(self) -> str:
-        """推断 HA 的对外访问地址（优先级从高到低）。
+        """推断 HA 的对外访问地址。
 
-        ① HA 配置的 external_url（用户外网访问时最准）
-        ② HA 配置的 internal_url
-        ③ 从 config_flow 的 context 里取（HA 会传当前请求的地址）
-        ④ 兜底：内网地址
+        ★ 2026-09-24 改进（用户反馈"在外面登不了"）：
+          旧逻辑无条件优先 external_url，但如果它写错了协议
+          （例如写了 https 而实际没有 HTTPS），生成的链接就打不开。
+
+          新优先级：
+            ① 当前访问来源（用户在哪儿打开 HA，链接就该指向哪儿）★ 最准
+            ② external_url
+            ③ internal_url
+            ④ 兜底 127.0.0.1
         """
-        # ① / ② HA 配置
-        try:
-            u = self.hass.config.external_url or self.hass.config.internal_url
-            if u:
-                return u.rstrip("/")
-        except Exception:  # noqa: BLE001
-            pass
-
-        # ③ ★ 从 config_flow context 取当前请求地址（最准！）
-        #    HA 的 config_flow 有 context['source'] 但不含 host；
-        #    改用 hass.config.api 的地址
+        # ① 最准：用户当前访问 HA 用的地址
         try:
             api = getattr(self.hass.config, "api", None)
             if api is not None:
-                # hass.config.api.base_url 形如 "http://<host>:8123"
                 bu = getattr(api, "base_url", None)
                 if bu:
                     return str(bu).rstrip("/")
         except Exception:  # noqa: BLE001
             pass
 
-        # ④ 兜底：127.0.0.1（config_flow 里用户可自行改成实际地址）
+        # ② / ③ HA 配置
+        for u in (
+            getattr(self.hass.config, "external_url", None),
+            getattr(self.hass.config, "internal_url", None),
+        ):
+            if u:
+                return str(u).rstrip("/")
+
+        # ④ 兜底
         return "http://127.0.0.1:8123"
 
+    def _all_base_urls(self) -> list[str]:
+        """所有可能的 HA 访问地址（给用户多个备选）。
+
+        ★ 2026-09-24 新增：用户可能在内外网切换，多给几个地址更实用。
+        """
+        urls: list[str] = []
+        seen: set[str] = set()
+
+        def add(u) -> None:
+            if not u:
+                return
+            v = str(u).rstrip("/")
+            if v and v not in seen:
+                seen.add(v)
+                urls.append(v)
+
+        try:
+            api = getattr(self.hass.config, "api", None)
+            if api is not None:
+                add(getattr(api, "base_url", None))
+        except Exception:  # noqa: BLE001
+            pass
+
+        add(getattr(self.hass.config, "internal_url", None))
+        add(getattr(self.hass.config, "external_url", None))
+        return urls
+
     def _browser_ph(self, tok: str, device_id: str) -> dict[str, str]:
-        """辅助页面的说明文案（含 URL + 多个备选地址）。"""
+        """辅助页面的说明文案（含 URL + 多个备选地址）。
+
+        ★ 2026-09-24 改进：不只给一个地址，而是列出所有可用地址。
+          用户可能在【外网】操作（例如在车里用手机），
+          如果只给内网地址就打不开。
+        """
         base = getattr(self, "_user_base_url", None) or self._base_url()
         url = f"{base}/lixiang-login?token={tok}"
-        # 本地地址时提示用户可改成外网地址
+
+        # ★ 生成"多个备选地址"列表（内网 + 外网）
+        alts: list[str] = []
+        for b in self._all_base_urls():
+            if b == base:
+                continue
+            alts.append(f"{b}/lixiang-login?token={tok}")
+
         alt = ""
-        if any(x in base for x in ("192.168.", "10.", "127.0.0.1", "localhost")):
-            alt = "（如果你从外网访问 HA，请把「HA 访问地址」改成你的外网地址）"
+        if alts:
+            if len(alts) == 1:
+                alt = f"如果上面打不开，试这个：{alts[0]}"
+            else:
+                alt = "如果上面打不开，依次试这些：\n" + "\n".join(
+                    f"· {a}" for a in alts)
+        elif any(x in base for x in ("192.168.", "10.", "127.0.0.1", "localhost")):
+            alt = ("如果你从外网访问 HA，请把「HA 访问地址」改成"
+                   "你实际使用的外网地址后重新提交。")
+
         return {
             "url": url,
             "url_alt": alt,
