@@ -41,6 +41,18 @@ _TYPE_TO_OPTION = {v: k for k, v in AC_TYPE_OPTIONS.items()}
 
 DEFAULT_OPTION = "前排空调"
 
+# ★ 2026-09-24 新增：充电模式
+#   枚举来源（App index.vehicle.js）：
+#     w = { StartOnTime: 0, EndOnTime: 1, LowestPrice: 2 }
+CHARGING_MODES = {
+    "开始时间充电": 0,      # StartOnTime
+    "结束时间充满": 1,      # EndOnTime
+    "低价充电": 2,          # LowestPrice（谷电时段，App 显示"低价充电"）
+}
+_MODE_TO_VALUE = CHARGING_MODES
+_VALUE_TO_MODE = {v: k for k, v in CHARGING_MODES.items()}
+DEFAULT_CHARGING_MODE = "低价充电"
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -58,7 +70,11 @@ async def async_setup_entry(
     if li_api is None:
         _LOGGER.warning("无密码登录凭据，跳过 select 实体")
         return
-    async_add_entities([LiCarAcTypeSelect(coordinator, li_api, device_info, vin)])
+    async_add_entities([
+        LiCarAcTypeSelect(coordinator, li_api, device_info, vin),
+        # ★ 2026-09-24 新增：充电模式（预约/结束/低价充电）
+        LiCarChargingModeSelect(coordinator, li_api, device_info, vin),
+    ])
 
 
 class LiCarAcTypeSelect(CoordinatorEntity, SelectEntity):
@@ -98,6 +114,127 @@ class LiCarAcTypeSelect(CoordinatorEntity, SelectEntity):
         self._option = option
         _LOGGER.info("空调控制类型设为 %s (%s)", option, _OPTION_TO_TYPE[option])
         self.async_write_ha_state()
+
+
+class LiCarChargingModeSelect(CoordinatorEntity, SelectEntity):
+    """充电模式选择（预约充电 / 结束充满 / 低价充电）.
+
+    ★ 命令（App index.vehicle.js 实证）：
+        cmdKey: remote_charge_control
+        cmdData: {
+          statusControlRequest: 255,
+          controlType: '3',
+          OrderChargingSwitch: "1"/"0",
+          OrderChargingMode: `${mode}`,      ← 0/1/2
+          reserveStartTime: "HH:mm",
+          NewReserveFinishTime: "HH:mm",
+          isContinue: "0"/"1"
+        }
+
+    ★ 枚举：
+        0 = 开始时间充电（StartOnTime）
+        1 = 结束时间充满（EndOnTime）
+        2 = 低价充电（LowestPrice，谷电时段）
+
+    ★ App 联动（源码发现）：
+        切到「低价充电」时会自动关闭电池保温（BatteryInsulation='0'）
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "充电模式"
+    _attr_icon = "mdi:ev-station"
+    _attr_options = list(CHARGING_MODES.keys())
+
+    # 状态源（VSS 信号 key）
+    _STATE_KEY = "charge_order_mode"
+    _START_KEY = "scheduled_charge_start"
+    _END_KEY = "scheduled_charge_end"
+
+    def __init__(self, coordinator, li_api, device_info, vin: str) -> None:
+        super().__init__(coordinator)
+        self._api = li_api
+        self._rid = route_id_of_vin(vin)
+        self._attr_unique_id = f"{DOMAIN}_{self._rid}_sel_charging_mode"
+        self._attr_device_info = device_info
+        self._optimistic: str | None = None
+        self._optimistic_until: float = 0.0
+        self._last_result: dict | None = None
+
+    def _vss(self, key: str) -> str | None:
+        sig = (self.coordinator.data or {}).get("vss", {}).get(key) or {}
+        v = sig.get("value")
+        return str(v) if v is not None else None
+
+    @property
+    def current_option(self) -> str | None:
+        import time as _t
+
+        raw = self._vss(self._STATE_KEY)
+        vss_mode: str | None = None
+        if raw is not None:
+            try:
+                vss_mode = _VALUE_TO_MODE.get(int(float(raw)))
+            except (TypeError, ValueError):
+                vss_mode = None
+
+        # 乐观更新（同其他平台）
+        if self._optimistic is not None:
+            if _t.monotonic() < self._optimistic_until:
+                if vss_mode is None or vss_mode != self._optimistic:
+                    return self._optimistic
+            self._optimistic = None
+            self._optimistic_until = 0.0
+
+        return vss_mode
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        attrs = {
+            "cmd_key": "remote_charge_control",
+            "control_type": "3",
+            "modes": dict(CHARGING_MODES),
+            "start_time": self._vss(self._START_KEY),
+            "end_time": self._vss(self._END_KEY),
+        }
+        if self._last_result is not None:
+            attrs["last_command_result"] = self._last_result
+        return attrs
+
+    @require_control
+    async def async_select_option(self, option: str) -> None:
+        if option not in CHARGING_MODES:
+            _LOGGER.warning("未知充电模式: %s", option)
+            return
+        mode = CHARGING_MODES[option]
+        start = self._vss(self._START_KEY) or "23:00"
+        end = self._vss(self._END_KEY) or "08:00"
+
+        cmd_data = {
+            "statusControlRequest": 255,
+            "controlType": "3",
+            "OrderChargingSwitch": "1",
+            "OrderChargingMode": str(mode),
+            "reserveStartTime": start,
+            "NewReserveFinishTime": end,
+            "isContinue": "0",
+        }
+        # ★ App 联动：低价充电时关闭电池保温
+        if mode == CHARGING_MODES["低价充电"]:
+            cmd_data["batteryInsulation"] = "0"
+
+        try:
+            res = await self.hass.async_add_executor_job(
+                self._api.send_command, "remote_charge_control", cmd_data)
+            self._last_result = res
+            import time as _t
+            self._optimistic = option
+            self._optimistic_until = _t.monotonic() + 150.0
+            _LOGGER.info("充电模式设为 %s（%d）: %s", option, mode, res)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.error("充电模式设置失败: %s", err)
+            raise
+        self.async_write_ha_state()
+        await self.coordinator.async_request_refresh()
 
 
 def option_to_type(option: str) -> str:

@@ -151,6 +151,11 @@ SWITCHES = (
     #   （"充电"不是可探测的车型能力，所有理想车都支持充电）
     ("charging", "充电", "mdi:battery-charging",
      "charge_status", "__CHARGING__", None),
+    # ★ 2026-09-24 新增：电池保温
+    #   App 命令：cmdKey=remote_charge_control
+    #            controlType='2', batteryInsulation: "1"/"0"
+    ("battery_insulation", "电池保温", "mdi:thermometer-lines",
+     "battery_insulation", "__INSULATION__", None),
     # ★ 2026-09-24 新增（用户建议）：哨兵从两个 button 改为一个 switch
     #   状态源：sentry_switch = SettingsStatus.sentinelSwitch（可靠）
     #   命令：sentinelModeSetting {"sentinelSwitch":0/1}
@@ -236,6 +241,10 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
                     vss_val = int(float(v)) == 3      # 3 = 充电中
                 except (TypeError, ValueError):
                     vss_val = None
+            elif self._control_type == "__INSULATION__":
+                # ★ 电池保温：值是 "0"/"1" 或 True/False
+                s2 = str(v).lower()
+                vss_val = s2 in ("1", "true")
             elif self._control_type == "__SENTRY__":
                 # ★ 哨兵状态是 JSON：{"sentinelSwitch": 0/1}
                 import json as _json
@@ -323,15 +332,19 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
     async def _send(self, level: int) -> None:
         """下发命令.
 
-        ★ 两种模式（2026-09-24）：
+        ★ 三种模式（2026-09-24）：
           ① 常规（空调/座椅）：cmdKey 固定 remoteVehACSmartControl
              cmdData = {acCtrlType, acCtrlValue, acCountdownTimer, acCtrlTemp}
-          ② 充电启停（特例）：cmdKey 由 level 决定
-             level != 0 → "remote_charging_start"
-             level == 0 → "remote_charging_stop"
-             cmdData = {}（空）
-             来源：VehicleControlModel$Companion 的
-                   LXVehicleControlTypeStartCharging/StopCharging 分支
+          ② 充电启停：cmdKey = remote_charge_control
+             cmdData = {statusControlRequest:255, controlType:"3",
+                        OrderChargingSwitch:"1"/"0"}
+          ③ 电池保温：cmdKey = remote_charge_control
+             cmdData = {statusControlRequest:255, controlType:"2",
+                        batteryInsulation:"1"/"0"}
+          ④ 哨兵：cmdKey = sentinelModeSetting
+
+          ⚠️ 历史错误：曾用 remote_charging_start/stop 作为 cmdKey
+             （这两个不存在）→ 返回 2009。已于 2026-09-24 修正。
         """
         if self._control_type == "__CHARGING__":
             # ★ 2026-09-24 修正：真正的 cmdKey 是 remote_charge_control
@@ -341,6 +354,15 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
                 "statusControlRequest": 255,
                 "controlType": "3",                       # 3 = 充电启停
                 "OrderChargingSwitch": "1" if level != 0 else "0",
+            }
+        elif self._control_type == "__INSULATION__":
+            # ★ 2026-09-24 新增：电池保温
+            #   App: controlType='2', batteryInsulation: "1"/"0"
+            cmd_key = "remote_charge_control"
+            cmd_data = {
+                "statusControlRequest": 255,
+                "controlType": "2",
+                "batteryInsulation": "1" if level != 0 else "0",
             }
         elif self._control_type == "__SENTRY__":
             # ★ 哨兵：cmdKey = sentinelModeSetting

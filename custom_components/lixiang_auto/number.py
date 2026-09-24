@@ -27,7 +27,7 @@ from homeassistant.components.number import (
     NumberMode,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import PERCENTAGE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -42,6 +42,15 @@ _LOGGER = logging.getLogger(LOGGER_NAME)
 CMD_AC = "remoteVehACSmartControl"
 AC_TYPE_FRONT = "frtACSw"
 AC_COUNTDOWN = "15"
+
+# ★ 2026-09-24 新增：充电设置
+#   命令来源（App index.vehicle.js）：
+#     cmdKey: remote_charge_control
+#     controlType='1' → chargingLimit（充电上限）
+CMD_CHARGE = "remote_charge_control"
+CHARGE_MIN = 50
+CHARGE_MAX = 100
+CHARGE_STEP = 5
 
 # ★ 2026-09-24 乐观更新有效期（秒）
 #   依据：HA 轮询间隔 DEFAULT_SCAN_INTERVAL_SECONDS = 60 秒
@@ -80,7 +89,32 @@ async def async_setup_entry(
             unit=UnitOfTemperature.CELSIUS,
             device_class=NumberDeviceClass.TEMPERATURE,
         ),
+        # ★ 2026-09-24 新增：充电上限
+        #   App 命令：controlType='1', chargingLimit
+        LiCarNumber(
+            coordinator, li_api, device_info, vin,
+            suffix="charge_limit", name="充电上限",
+            icon="mdi:battery-charging-80", state_key="charge_limit",
+            cmd_key=CMD_CHARGE, data_builder=_charge_limit_payload,
+            minimum=CHARGE_MIN, maximum=CHARGE_MAX, step=CHARGE_STEP,
+            unit=PERCENTAGE,
+            device_class=None,
+        ),
     ])
+
+
+def _charge_limit_payload(value: float) -> dict:
+    """构造充电上限报文.
+
+    ★ App 实现（index.vehicle.js）：
+        cmdData: {statusControlRequest: 255, controlType: '1',
+                  chargingLimit: `${value}`}
+    """
+    return {
+        "statusControlRequest": 255,
+        "controlType": "1",
+        "chargingLimit": str(int(value)),
+    }
 
 
 def _ac_temp_payload(value: float) -> dict:
