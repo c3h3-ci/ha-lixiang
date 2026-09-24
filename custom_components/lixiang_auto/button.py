@@ -55,6 +55,26 @@ BUTTONS = (
      "remoteVehWdwControl", _windows("0"), True),
     ("engine_start", "远程启动", "mdi:engine",
      "remoteVehAuth", {}, True),
+    # ★ 2026-09-24 补充：其余 App 支持的车控
+    #   参数来源：MControlKeyConst + 车控命令全集报告
+    #
+    # 闪灯（searchType=1，Integer）
+    ("flash_light", "闪灯", "mdi:car-light-high",
+     "remoteVehSearch", {"searchType": 1}, False),
+    # 鸣笛（searchType=2，Integer）
+    ("whistle", "鸣笛", "mdi:bullhorn",
+     "remoteVehSearch", {"searchType": 2}, False),
+    # 哨兵开启
+    #   ⚠️ 时间戳字段拼写是 "timestap"（少一个 m）—— App 就这么拼，必须照抄
+    ("sentry_on", "开启哨兵", "mdi:shield-car",
+     "sentinelModeSetting", {"sentinelSwitch": 1}, True),
+    # 哨兵关闭
+    ("sentry_off", "关闭哨兵", "mdi:shield-off",
+     "sentinelModeSetting", {"sentinelSwitch": 0}, True),
+    # 远程拍照
+    #   ⚠️ 同样用 "timestap"；vehImage 固定 "veh_svm_image"
+    ("svm_photo", "远程拍照", "mdi:camera",
+     "mobileVehSvm", {"vehImage": "veh_svm_image"}, True),
 )
 
 
@@ -111,17 +131,28 @@ class LiCarButton(CoordinatorEntity, ButtonEntity):
     async def async_press(self, **kwargs: Any) -> None:
         """下发命令.
 
-        寻车 (wait_result=False) 用 fire-and-forget: 鸣笛/闪灯无明确终态,
-        轮询只会白等到超时。
+        寻车/闪灯/鸣笛 (wait_result=False) 用 fire-and-forget:
+        这类命令无明确终态，轮询只会白等到超时。
+
+        ★ 2026-09-24：哨兵与 SVM 的 cmdData 需要 "timestap" 字段
+          （App 的拼写就是少一个 m，必须照抄）——
+          这里自动注入当前毫秒时间戳。
         """
+        import time as _t
+
+        cmd_data = dict(self._cmd_data)
+        # 哨兵 / 拍照 需要时间戳（字段名 timestap，非 timestamp）
+        if self._cmd_key in ("sentinelModeSetting", "mobileVehSvm"):
+            cmd_data["timestap"] = int(_t.time() * 1000)
+
         try:
             if self._wait_result:
                 res = await self.hass.async_add_executor_job(
-                    self._api.send_command, self._cmd_key, self._cmd_data)
+                    self._api.send_command, self._cmd_key, cmd_data)
             else:
                 res = await self.hass.async_add_executor_job(
                     self._api.send_command_fire_and_forget,
-                    self._cmd_key, self._cmd_data)
+                    self._cmd_key, cmd_data)
             self._last_result = res
             _LOGGER.info("车控 %s %s 已执行: %s", self._cmd_key, self._cmd_data, res)
         except Exception as err:  # noqa: BLE001

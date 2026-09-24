@@ -132,6 +132,16 @@ SWITCHES = (
      "ac_cool_fast", "acCoolFast", "空调"),
     ("ac_defrost", "空调除霜", "mdi:snowflake-melt",
      "ac_defrost", "dfstSw", "空调"),
+    # ★ 2026-09-24 补充：充电启停
+    #   ★ 这个开关的 cmdKey 不是固定的（与其他不同）：
+    #     App 用 cmdData.statusControlRequest 决定：
+    #       0     → cmdKey = "remote_charging_stop"
+    #       非 0  → cmdKey = "remote_charging_start"
+    #     cmdData 本身是空 {}（由 send_command 注入 token 等）
+    #   → 需要特殊处理（见 LiCarSwitch._send）
+    #   ⚠️ 状态读取用 charge_status（ChargeStatus == 3 → 充电中）
+    ("charging", "充电", "mdi:battery-charging",
+     "charge_status", "__CHARGING__", "充电"),
 )
 
 
@@ -190,9 +200,22 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
 
     @property
     def is_on(self) -> bool | None:
+        """开关状态.
+
+        ★ 充电开关特例（2026-09-24）：
+          ChargeStatus 的语义是枚举（不是 0/1）：
+            3 = 充电中 → on
+            其他（5 已停止 / 7 告警 / 15 未插枪 等）→ off
+          依据：App 的 XChargeDataHandle.getChargeState()
+        """
         sig = (self.coordinator.data or {}).get("vss", {}).get(self._state_key)
         if sig and sig.get("value") is not None:
             v = sig["value"]
+            if self._control_type == "__CHARGING__":
+                try:
+                    return int(float(v)) == 3      # 3 = 充电中
+                except (TypeError, ValueError):
+                    return None
             try:
                 return int(float(v)) != 0
             except (TypeError, ValueError):
@@ -219,15 +242,33 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
         await self._send(0)
 
     async def _send(self, level: int) -> None:
-        cmd_data = _custom(self._control_type, level)
+        """下发命令.
+
+        ★ 两种模式（2026-09-24）：
+          ① 常规（空调/座椅）：cmdKey 固定 remoteVehACSmartControl
+             cmdData = {acCtrlType, acCtrlValue, acCountdownTimer, acCtrlTemp}
+          ② 充电启停（特例）：cmdKey 由 level 决定
+             level != 0 → "remote_charging_start"
+             level == 0 → "remote_charging_stop"
+             cmdData = {}（空）
+             来源：VehicleControlModel$Companion 的
+                   LXVehicleControlTypeStartCharging/StopCharging 分支
+        """
+        if self._control_type == "__CHARGING__":
+            cmd_key = "remote_charging_start" if level != 0 else "remote_charging_stop"
+            cmd_data: dict = {}
+        else:
+            cmd_key = CMD_AC
+            cmd_data = _custom(self._control_type, level)
+
         try:
             res = await self.hass.async_add_executor_job(
-                self._api.send_command, CMD_AC, cmd_data)
+                self._api.send_command, cmd_key, cmd_data)
             self._last_result = res
             self._optimistic_on = level != 0
-            _LOGGER.info("车控 %s 已执行: %s", cmd_data, res)
+            _LOGGER.info("车控 %s %s 已执行: %s", cmd_key, cmd_data, res)
         except Exception as err:  # noqa: BLE001
-            _LOGGER.error("车控 %s 失败: %s", cmd_data, err)
+            _LOGGER.error("车控 %s %s 失败: %s", cmd_key, cmd_data, err)
             self._optimistic_on = None
             raise
         await self.coordinator.async_request_refresh()
