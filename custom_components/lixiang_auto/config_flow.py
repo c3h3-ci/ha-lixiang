@@ -358,29 +358,21 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return None
 
     def _base_url(self) -> str:
-        """推断 HA 的对外访问地址。
+        """推断 HA 的访问地址。
 
         ★ 2026-09-24 改进（用户反馈"在外面登不了"）：
-          旧逻辑无条件优先 external_url，但如果它写错了协议
-          （例如写了 https 而实际没有 HTTPS），生成的链接就打不开。
-
-          新优先级：
-            ① 当前访问来源（用户在哪儿打开 HA，链接就该指向哪儿）★ 最准
-            ② external_url
-            ③ internal_url
-            ④ 兜底 127.0.0.1
+          改用 HA 官方的 helpers.network.get_url()，
+          它会考虑用户配置的 external_url / internal_url
+          以及 HA Cloud，而不是死板地只取其中一个。
         """
-        # ① 最准：用户当前访问 HA 用的地址
         try:
-            api = getattr(self.hass.config, "api", None)
-            if api is not None:
-                bu = getattr(api, "base_url", None)
-                if bu:
-                    return str(bu).rstrip("/")
-        except Exception:  # noqa: BLE001
-            pass
+            from homeassistant.helpers.network import get_url
+            url = get_url(self.hass, prefer_external=True, allow_ip=True)
+            if url:
+                return str(url).rstrip("/")
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("get_url(prefer_external) 失败: %s", err)
 
-        # ② / ③ HA 配置
         for u in (
             getattr(self.hass.config, "external_url", None),
             getattr(self.hass.config, "internal_url", None),
@@ -388,13 +380,12 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if u:
                 return str(u).rstrip("/")
 
-        # ④ 兜底
         return "http://127.0.0.1:8123"
 
     def _all_base_urls(self) -> list[str]:
         """所有可能的 HA 访问地址（给用户多个备选）。
 
-        ★ 2026-09-24 新增：用户可能在内外网切换，多给几个地址更实用。
+        ★ 用户可能在内外网切换，多给几个地址更实用。
         """
         urls: list[str] = []
         seen: set[str] = set()
@@ -408,51 +399,73 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 urls.append(v)
 
         try:
-            api = getattr(self.hass.config, "api", None)
-            if api is not None:
-                add(getattr(api, "base_url", None))
+            from homeassistant.helpers.network import get_url
+
+            # ① 外网优先（用户在车里时用这个）
+            try:
+                add(get_url(self.hass, prefer_external=True, allow_ip=True))
+            except Exception:  # noqa: BLE001
+                pass
+            # ② 内网
+            try:
+                add(get_url(self.hass, prefer_external=False, allow_ip=True))
+            except Exception:  # noqa: BLE001
+                pass
         except Exception:  # noqa: BLE001
             pass
 
+        # ③ HA 配置值兜底
         add(getattr(self.hass.config, "internal_url", None))
         add(getattr(self.hass.config, "external_url", None))
         return urls
 
     def _browser_ph(self, tok: str, device_id: str) -> dict[str, str]:
-        """辅助页面的说明文案（含 URL + 多个备选地址）。
+        """辅助页面的说明文案。
 
-        ★ 2026-09-24 改进：不只给一个地址，而是列出所有可用地址。
-          用户可能在【外网】操作（例如在车里用手机），
-          如果只给内网地址就打不开。
+        ★ 2026-09-24 改进（用户反馈"在外面登不了"）：
+
+          问题：config_flow 里【拿不到用户当前的访问地址】
+                （HA 的 FlowContext 只有 source，没有请求 Host）
+                → 只能靠 hass.config 的配置值
+                → 用户配错协议（写 https 实际没 HTTPS）就打不开
+
+          解决：
+            ① 主链接用【相对路径 /lixiang-login?token=xxx】
+               浏览器自动补全当前域名 → 在哪儿访问都对！
+            ② 绝对地址作为备选（内网 + 外网都列出）
+            ③ 说明内网地址只在家里 Wi-Fi 下可用
         """
-        base = getattr(self, "_user_base_url", None) or self._base_url()
-        url = f"{base}/lixiang-login?token={tok}"
+        # ★ 主链接：相对路径
+        rel_url = f"/lixiang-login?token={tok}"
 
-        # ★ 生成"多个备选地址"列表（内网 + 外网）
-        alts: list[str] = []
-        for b in self._all_base_urls():
-            if b == base:
-                continue
-            alts.append(f"{b}/lixiang-login?token={tok}")
+        # 绝对地址备选
+        abs_urls = [f"{b}/lixiang-login?token={tok}"
+                    for b in self._all_base_urls()]
 
-        alt = ""
-        if alts:
-            if len(alts) == 1:
-                alt = f"如果上面打不开，试这个：{alts[0]}"
-            else:
-                alt = "如果上面打不开，依次试这些：\n" + "\n".join(
-                    f"· {a}" for a in alts)
-        elif any(x in base for x in ("192.168.", "10.", "127.0.0.1", "localhost")):
-            alt = ("如果你从外网访问 HA，请把「HA 访问地址」改成"
-                   "你实际使用的外网地址后重新提交。")
+        if abs_urls:
+            alt_lines = ["如果上面打不开，试这些绝对地址："]
+            for u in abs_urls:
+                tag = ""
+                if any(x in u for x in ("192.168.", "10.", "127.0.0.1",
+                                        "localhost")):
+                    tag = "   ← 仅在家里 Wi-Fi 下可用"
+                alt_lines.append(f"· {u}{tag}")
+            alt = "\n".join(alt_lines)
+        else:
+            alt = "（无法推断地址，请手动打开：你的 HA 地址 + /lixiang-login?token=…）"
+
+        cur_base = getattr(self, "_user_base_url", None) or self._base_url()
 
         return {
-            "url": url,
+            "url": rel_url,
+            "url_abs": abs_urls[0] if abs_urls else rel_url,
             "url_alt": alt,
+            "token": tok,
+            "base_url": cur_base,
             "device": device_id[:16],
         }
 
-    # 兼容旧 step 名（避免旧的进行中流程报错）
+
     async def async_step_sms(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """旧入口 → 转发到浏览器辅助登录。"""
         return await self.async_step_browser(user_input)
