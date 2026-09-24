@@ -2,16 +2,16 @@
   "domain": "lixiang_auto",
   "name": "Li Auto",
   "codeowners": [
-    "@C3H3-AI"
+    "@c3h3-bi"
   ],
   "config_flow": true,
   "dependencies": [
     "http"
   ],
-  "documentation": "https://github.com/C3H3-AI/ha-lixiang",
+  "documentation": "https://github.com/c3h3-bi/ha-lixiang",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/C3H3-AI/ha-lixiang/issues",
+  "issue_tracker": "https://github.com/c3h3-bi/ha-lixiang/issues",
   "loggers": [
     "lixiang_auto"
   ],

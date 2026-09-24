@@ -23,7 +23,7 @@
      ./li-pr.sh submit
      
 ⑤ 人在 GitHub 上 review + 合并
-     https://github.com/C3H3-AI/ha-lixiang/pulls
+     https://github.com/c3h3-bi/ha-lixiang/pulls
 ```
 
 ---

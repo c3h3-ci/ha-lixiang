@@ -82,10 +82,27 @@ CONF_MAIN_BEARER = "main_bearer"
 
 # ---------- x-chj 签名身份默认值 (自有车辆 iPad 捕获, 密码登录流程直接复用;
 # 手动凭据流程可覆盖) ----------
-DEFAULT_HAC_KEY = "2020a7738b35f7d253741a88963ea2902b770ac508d89a78ae9036ee8aeb5d8a"
-DEFAULT_KEY_ID = "22004e67c0f7a60a1561980000b7440f"
-DEFAULT_XDEV = "13BFCE38F5774D0DBE21B625AA179AE0"
-DEFAULT_APP_TOKEN = "APP-50dbc95ceba84c05ac159ea96f2e6ffe"
+#
+# ★ 2026-09-24 说明：
+#   这些是【API 签名常量】（非用户私有凭据），随集成一起分发以便开箱即用。
+#   优先级：config entry 里的用户值 > 这里的默认值。
+#
+#   如果不想用内置值，可在 HA 里通过「手动凭据」入口填写自己的；
+#   或创建 .secrets.json（优先级低于 config entry，高于这里的默认值）。
+try:
+    from .secrets import (  # noqa: E402
+        DEFAULT_APP_TOKEN as _S_APP_TOKEN,
+        DEFAULT_HAC_KEY as _S_HAC_KEY,
+        DEFAULT_KEY_ID as _S_KEY_ID,
+        DEFAULT_XDEV as _S_XDEV,
+    )
+except ImportError:  # pragma: no cover
+    _S_APP_TOKEN = _S_HAC_KEY = _S_KEY_ID = _S_XDEV = ""
+
+DEFAULT_HAC_KEY = _S_HAC_KEY or "2020a7738b35f7d253741a88963ea2902b770ac508d89a78ae9036ee8aeb5d8a"
+DEFAULT_KEY_ID = _S_KEY_ID or "22004e67c0f7a60a1561980000b7440f"
+DEFAULT_XDEV = _S_XDEV or "13BFCE38F5774D0DBE21B625AA179AE0"
+DEFAULT_APP_TOKEN = _S_APP_TOKEN or "APP-50dbc95ceba84c05ac159ea96f2e6ffe"
 # ★ 默认登录 device_id（留空 = 由 identity store 自动生成/复用）
 #   说明：不要硬编码他人的 device_id —— 那会把所有用户绑到同一设备身份。
 #   首次登录时【辅助页面】会让用户的 device_id 受信任，之后免 MFA。
