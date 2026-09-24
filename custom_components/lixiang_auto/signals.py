@@ -92,8 +92,9 @@ SIGNALS: dict[str, SignalSpec] = {
     "ac_on": SignalSpec(
         key="ac_on",
         path="Vehicle.Cabin.AC.FOffStatus",
-        name="ac_on",
+        name="空调开关",
         freq=Freq.HIGH,
+        icon="mdi:air-conditioner",
         platforms=frozenset(),  # ★ 空调开关信号（climate 平台用，不建实体）
     ),
     "ac_set_temp": SignalSpec(
@@ -191,8 +192,11 @@ SIGNALS: dict[str, SignalSpec] = {
     "charge_current_ac": SignalSpec(
         key="charge_current_ac",
         path="Vehicle.Powertrain.Battery.ACChargeCurrent",
-        name="charge_current_ac",
+        name="交流充电电流",
+        unit="A",
         freq=Freq.HIGH,
+        icon="mdi:current-ac",
+        category="充电",
     ),
     "charge_fault": SignalSpec(
         key="charge_fault",
@@ -253,21 +257,29 @@ SIGNALS: dict[str, SignalSpec] = {
     "charge_port_lid_old": SignalSpec(
         key="charge_port_lid_old",
         path="Vehicle.Body.DoorSwitchStatus.ChrgPorLidSts",
-        name="charge_port_lid_old",
+        name="充电口盖(旧信号)",
         freq=Freq.HIGH,
+        icon="mdi:ev-plug-type2",
         platforms=frozenset(),  # ★ 旧版充电口盖路径（仅保留供参考）
+        category="充电",
     ),
     "charge_power_cltc": SignalSpec(
         key="charge_power_cltc",
         path="Vehicle.Powertrain.Battery.CLTCChargePower",
-        name="charge_power_cltc",
+        name="充电功率(CLTC)",
+        unit="kW",
         freq=Freq.HIGH,
+        icon="mdi:lightning-bolt",
+        category="充电",
     ),
     "charge_power_wltc": SignalSpec(
         key="charge_power_wltc",
         path="Vehicle.Powertrain.Battery.WLTCChargePower",
-        name="charge_power_wltc",
+        name="充电功率(WLTC)",
+        unit="kW",
         freq=Freq.HIGH,
+        icon="mdi:lightning-bolt",
+        category="充电",
     ),
     "charge_remain_time": SignalSpec(
         key="charge_remain_time",
@@ -291,8 +303,11 @@ SIGNALS: dict[str, SignalSpec] = {
     "charge_voltage_ac": SignalSpec(
         key="charge_voltage_ac",
         path="Vehicle.Powertrain.Battery.ACChargeVoltage",
-        name="charge_voltage_ac",
+        name="交流充电电压",
+        unit="V",
         freq=Freq.HIGH,
+        icon="mdi:sine-wave",
+        category="充电",
     ),
     "config_code": SignalSpec(
         key="config_code",
@@ -612,8 +627,10 @@ SIGNALS: dict[str, SignalSpec] = {
     "mileage_final": SignalSpec(
         key="mileage_final",
         path="Vehicle.Cabin.CLTC.MileageFinalResult",
-        name="mileage_final",
+        name="总里程",
+        unit="km",
         freq=Freq.HIGH,
+        icon="mdi:counter",
         platforms=frozenset(),  # ★ L6 实测无数据（MileageFinalResult 返回 None）
     ),
     "mirror_left": SignalSpec(
@@ -675,8 +692,9 @@ SIGNALS: dict[str, SignalSpec] = {
     "ota_short": SignalSpec(
         key="ota_short",
         path="Vehicle.Version.OTA.displayedBaseline",
-        name="ota_short",
+        name="OTA 版本(简)",
         freq=Freq.LOW,
+        icon="mdi:cellphone-arrow-down",
     ),
     "ota_state": SignalSpec(
         key="ota_state",
@@ -742,26 +760,34 @@ SIGNALS: dict[str, SignalSpec] = {
     "range_elec_cltc": SignalSpec(
         key="range_elec_cltc",
         path="Vehicle.Cabin.CLTC.PureElecEnduranceMileInd",
-        name="range_elec_cltc",
+        name="纯电续航(CLTC)",
+        unit="km",
         freq=Freq.HIGH,
+        icon="mdi:ev-station",
     ),
     "range_elec_wltc": SignalSpec(
         key="range_elec_wltc",
         path="Vehicle.Cabin.WLTC.PureElecEnduranceMileInd",
-        name="range_elec_wltc",
+        name="纯电续航(WLTC)",
+        unit="km",
         freq=Freq.HIGH,
+        icon="mdi:ev-station",
     ),
     "range_fuel_cltc": SignalSpec(
         key="range_fuel_cltc",
         path="Vehicle.Cabin.CLTC.FuelEnduranceMileInd",
-        name="range_fuel_cltc",
+        name="燃油续航(CLTC)",
+        unit="km",
         freq=Freq.HIGH,
+        icon="mdi:gas-station",
     ),
     "range_fuel_wltc": SignalSpec(
         key="range_fuel_wltc",
         path="Vehicle.Cabin.WLTC.FuelEnduranceMileInd",
-        name="range_fuel_wltc",
+        name="燃油续航(WLTC)",
+        unit="km",
         freq=Freq.HIGH,
+        icon="mdi:gas-station",
     ),
     "scene_mode": SignalSpec(
         key="scene_mode",
@@ -1193,8 +1219,10 @@ SIGNALS: dict[str, SignalSpec] = {
     "window_skylight": SignalSpec(
         key="window_skylight",
         path="Vehicle.Body.WindowPosition.SkylightWindow",
-        name="window_skylight",
+        name="天窗位置",
+        unit="%",
         freq=Freq.HIGH,
+        icon="mdi:window-closed-variant",
         platforms=frozenset(),  # ★ L6 实测无数据（SkylightWindow 返回 None）
     ),
     # ★ 虚拟信号（非 VSS）—— 值来自 coordinator.data 的其他字段
