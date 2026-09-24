@@ -100,14 +100,26 @@ class TestKnownFeatures:
         k = _extract_dict("features.py", "KNOWN_FEATURES")
         assert k["M01"].get("前备箱") is False
 
-    def test_l6_has_no_electric_sunshade(self):
-        """★ L6 无【电动】遮阳帘（只有手动卡扣式天幕帘）
+    def test_l6_has_sunshade(self):
+        """★ L6 确实【有】遮阳帘（用户实车确认）
 
-        证据：① App 逻辑引用数 0（无消费者）
-              ② L6 官方配置无"电动遮阳帘"
+        ⚠️ 曾经的误判：
+          依据"App 代码引用数 0"判为不存在 —— 这是错的。
+          App 界面不显示该状态，只说明【产品设计没做入口】，
+          不代表硬件不存在。
+
+        教训：硬件存在性要靠【实车信号 + 用户确认】，不能靠 App 代码。
         """
         k = _extract_dict("features.py", "KNOWN_FEATURES")
-        assert k["M01"].get("遮阳帘") is False
+        assert k["M01"].get("遮阳帘") is True, "L6 有遮阳帘"
+
+    def test_l6_plate_display_unsupported(self):
+        """★ L6 不支持牌显
+
+        依据：LXM01StateDelegate.getSupportPlateDisplay() → getUN_SUPPORT
+        """
+        k = _extract_dict("features.py", "KNOWN_FEATURES")
+        assert k["M01"].get("牌显") is False
 
     def test_l6_has_steering_wheel_heat(self):
         """★ L6 有方向盘加热（曾因 VSS 探测 7 天新鲜度判据被误判为不支持）"""

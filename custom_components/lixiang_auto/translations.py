@@ -140,7 +140,6 @@ VALUE_MAPS: dict[str, dict] = {
     "LicLghtSts":           {0: "关闭", 1: "开启"},
     "LRearMirro":           {0: "收起", 1: "展开"},
     "RRearMirro":           {0: "收起", 1: "展开"},
-    "FrtSunshdSwSts":       {0: "关闭", 1: "开启"},
 }
 
 
