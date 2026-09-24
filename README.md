@@ -159,7 +159,7 @@ cp -r custom_components/lixiang_auto /path/to/homeassistant/config/custom_compon
 | binary_sensor | 34 | 门锁、车窗、充电枪、告警… |
 | **fan** | **9** | **座椅加热/通风（关闭·低·中·高，含二排左中右）** |
 | **switch** | **5** | **方向盘加热、快热、快冷、除霜、哨兵** |
-| button | 5 | 寻车、远程授权、闪灯、鸣笛、远程拍照 |
+| button | 5 | 寻车、授权驾驶、闪灯、鸣笛、远程拍照 |
 | **cover** | **2** | **尾门 / 全车窗** |
 | climate | 1 | 空调（温度/模式）|
 | lock | 1 | 车锁 |
