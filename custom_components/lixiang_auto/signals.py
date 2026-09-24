@@ -695,6 +695,7 @@ SIGNALS: dict[str, SignalSpec] = {
         name="OTA 版本(简)",
         freq=Freq.LOW,
         icon="mdi:cellphone-arrow-down",
+        diagnostic=True,
     ),
     "ota_state": SignalSpec(
         key="ota_state",

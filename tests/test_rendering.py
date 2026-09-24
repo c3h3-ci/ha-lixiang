@@ -328,3 +328,48 @@ class TestJsonSignalRendering:
             r = render_value(key, val, {"value": val, "ts": "1"}, {})
             assert not str(r).startswith("{"), (
                 f"{key} 仍返回原始 JSON: {str(r)[:60]}")
+
+
+class TestMaintenanceSignals:
+    """★ 保养类信号渲染（2026-09-24 发现 maint_engine_level2 误判）"""
+
+    def test_engine_level2_full(self):
+        """保养二级：应显示名称+剩余里程+到期日"""
+        val = json.dumps({
+            "name": "增程器大保养",
+            "maintainLeftMileage": 9506.5,
+            "maintainDueDate": "20270719",
+            "periodMileage": 10000,
+        })
+        r = render_value("maint_engine_level2", val, {"value": val, "ts": "1"}, {})
+        assert "增程器大保养" in str(r)
+        assert "9506" in str(r)
+        assert "2027-07-19" in str(r)
+
+    def test_engine_level2_not_wrongly_normal(self):
+        """★ 关键的防回归：不能因为 maint_ 前缀误返回「正常」"""
+        val = json.dumps({
+            "name": "增程器大保养",
+            "maintainLeftMileage": 9506.5,
+            "maintainDueDate": "20270719",
+        })
+        r = render_value("maint_engine_level2", val, {"value": val, "ts": "1"}, {})
+        assert r != "正常", (
+            "maint_engine_level2 被 maint_ 前缀逻辑误伤了 —— "
+            "它的字段结构与普通保养项不同")
+
+    def test_engine_level2_no_mileage(self):
+        """只有名称时也能显示"""
+        val = json.dumps({"name": "增程器大保养"})
+        r = render_value("maint_engine_level2", val, {"value": val, "ts": "1"}, {})
+        assert r == "增程器大保养"
+
+    def test_engine_level2_bad_json(self):
+        r = render_value("maint_engine_level2", "bad", {"value": "bad", "ts": "1"}, {})
+        assert r == "未知"
+
+    def test_normal_maint_still_works(self):
+        """普通保养项（maint_engine_oil）逻辑不受影响"""
+        val = json.dumps({"maintainLeftMileage": 3000})
+        r = render_value("maint_engine_oil", val, {"value": val, "ts": "1"}, {})
+        assert "剩余 3000 km" in str(r)

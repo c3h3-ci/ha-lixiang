@@ -200,6 +200,25 @@ def render_value(
         except (ValueError, TypeError):
             return val
 
+    # ---- ★ 2026-09-24 保养二级（maint_engine_level2）----
+    #   ⚠️ 必须放在 maint_ 前缀判断【之前】——
+    #      它的字段结构不同（无 maintainLeftMileage 之外的常见字段组合），
+    #      用通用逻辑会误返回"正常"。
+    if key == "maint_engine_level2":
+        try:
+            o = json.loads(val) if isinstance(val, str) else val
+            name = o.get("name") or "保养"
+            left = o.get("maintainLeftMileage")
+            due = str(o.get("maintainDueDate") or "")
+            parts = [str(name)]
+            if isinstance(left, (int, float)):
+                parts.append(f"剩余 {left:.0f} km")
+            if len(due) == 8 and due.isdigit():
+                parts.append(f"{due[:4]}-{due[4:6]}-{due[6:]} 到期")
+            return " · ".join(parts) if len(parts) > 1 else str(name)
+        except (ValueError, TypeError, AttributeError):
+            return "未知"
+
     # ---- 保养类: 提取关键字段 ----
     if key.startswith("maint_"):
         try:
