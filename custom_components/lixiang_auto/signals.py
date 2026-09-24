@@ -835,7 +835,7 @@ SIGNALS: dict[str, SignalSpec] = {
         key="seat_sl_heat",
         path="Vehicle.Cabin.Seat.SLSeatHeatState",
         name="二排左座椅加热",
-        freq=Freq.MID,
+        freq=Freq.HIGH,
         icon="mdi:car-seat-heater",
         category="座椅",
     ),  # 有翻译映射
@@ -843,7 +843,7 @@ SIGNALS: dict[str, SignalSpec] = {
         key="seat_sl_vent",
         path="Vehicle.Cabin.Seat.SLSeatVentilationState",
         name="二排左座椅通风",
-        freq=Freq.MID,
+        freq=Freq.HIGH,
         icon="mdi:car-seat-cooler",
         category="座椅",
     ),  # 有翻译映射
@@ -851,7 +851,7 @@ SIGNALS: dict[str, SignalSpec] = {
         key="seat_sm_heat",
         path="Vehicle.Cabin.Seat.SMSeatHeatState",
         name="二排中座椅加热",
-        freq=Freq.MID,
+        freq=Freq.HIGH,
         icon="mdi:car-seat-heater",
         category="座椅",
     ),  # 有翻译映射
@@ -859,7 +859,7 @@ SIGNALS: dict[str, SignalSpec] = {
         key="seat_sr_heat",
         path="Vehicle.Cabin.Seat.SRSeatHeatState",
         name="二排右座椅加热",
-        freq=Freq.MID,
+        freq=Freq.HIGH,
         icon="mdi:car-seat-heater",
         category="座椅",
     ),  # 有翻译映射
@@ -867,7 +867,7 @@ SIGNALS: dict[str, SignalSpec] = {
         key="seat_sr_vent",
         path="Vehicle.Cabin.Seat.SRSeatVentilationState",
         name="二排右座椅通风",
-        freq=Freq.MID,
+        freq=Freq.HIGH,
         icon="mdi:car-seat-cooler",
         category="座椅",
     ),  # 有翻译映射
@@ -875,7 +875,7 @@ SIGNALS: dict[str, SignalSpec] = {
         key="seat_tl_heat",
         path="Vehicle.Cabin.Seat.TLSeatHeatState",
         name="三排左座椅加热",
-        freq=Freq.MID,
+        freq=Freq.HIGH,
         icon="mdi:car-seat-heater",
         category="座椅",
     ),  # 有翻译映射
@@ -883,7 +883,7 @@ SIGNALS: dict[str, SignalSpec] = {
         key="seat_tl_vent",
         path="Vehicle.Cabin.Seat.TLSeatVentilationState",
         name="三排左座椅通风",
-        freq=Freq.MID,
+        freq=Freq.HIGH,
         icon="mdi:car-seat-cooler",
         category="座椅",
     ),  # 有翻译映射
@@ -891,7 +891,7 @@ SIGNALS: dict[str, SignalSpec] = {
         key="seat_tm_heat",
         path="Vehicle.Cabin.Seat.TMSeatHeatState",
         name="三排中座椅加热",
-        freq=Freq.MID,
+        freq=Freq.HIGH,
         icon="mdi:car-seat-heater",
         category="座椅",
     ),  # 有翻译映射
@@ -899,7 +899,7 @@ SIGNALS: dict[str, SignalSpec] = {
         key="seat_tr_heat",
         path="Vehicle.Cabin.Seat.TRSeatHeatState",
         name="三排右座椅加热",
-        freq=Freq.MID,
+        freq=Freq.HIGH,
         icon="mdi:car-seat-heater",
         category="座椅",
     ),  # 有翻译映射
@@ -907,7 +907,7 @@ SIGNALS: dict[str, SignalSpec] = {
         key="seat_tr_vent",
         path="Vehicle.Cabin.Seat.TRSeatVentilationState",
         name="三排右座椅通风",
-        freq=Freq.MID,
+        freq=Freq.HIGH,
         icon="mdi:car-seat-cooler",
         category="座椅",
     ),  # 有翻译映射
@@ -1193,9 +1193,10 @@ SIGNALS: dict[str, SignalSpec] = {
     ),
     # ★ 虚拟信号（非 VSS）—— 值来自 coordinator.data 的其他字段
     # ⚠️ gen_signals.py 从 VSS_PATHS 生成，不会包含它们 —— 需手工维护
+    # path="" → by_freq/paths_for/VSS_PATHS_COMPAT 会排除，不进 VSS 轮询
     "online_status": SignalSpec(
         key="online_status",
-        path="",                      # 无 VSS 路径（虚拟信号）
+        path="",
         name="在线状态",
         freq=Freq.HIGH,
         icon="mdi:car-connected",
@@ -1284,7 +1285,7 @@ def specs_for(platform: str, features: dict | None = None) -> list[SignalSpec]:
 def by_freq(freq: Freq) -> list[SignalSpec]:
     """按频率档位筛选（coordinator 用）。
 
-    ★ 2026-09-24：排除虚拟信号（path 为空）—— 它们不走 VSS 轮询。
+    ★ 排除虚拟信号（path 为空）—— 它们不走 VSS 轮询。
     """
     return [s for s in SIGNALS.values() if s.freq == freq and s.path]
 
@@ -1293,14 +1294,12 @@ def paths_for(freq: Freq | None = None) -> list[str]:
     """返回 VSS 路径列表（coordinator 轮询用）。
 
     freq=None 表示全部。
-
-    ★ 2026-09-24：排除【虚拟信号】（path 为空）——
-      它们的值来自 coordinator.data 的其他字段，不通过 VSS 轮询。
+    ★ 排除 path 为空的虚拟信号。
     """
     items = [s for s in SIGNALS.values() if s.path]
-    if freq is not None:
-        items = [s for s in items if s.freq == freq]
-    return [s.path for s in items]
+    if freq is None:
+        return [s.path for s in items]
+    return [s.path for s in items if s.freq == freq]
 
 
 def path_of(key: str) -> str:
@@ -1316,6 +1315,7 @@ def value_map_of(key: str) -> dict | None:
 
 
 # 兼容：把 SIGNALS 转成旧的 {key: path} 形式
+# ★ 排除 path 为空的虚拟信号（如 online_status）
 VSS_PATHS_COMPAT: dict[str, str] = {
     k: s.path for k, s in SIGNALS.items() if s.path
 }

@@ -32,27 +32,12 @@ from .entity_helper import route_id_of_vin
 
 _LOGGER = logging.getLogger(LOGGER_NAME)
 
-# 车窗四位置（前左/前右/后左/后右）
-_WIN_KEYS = ("flWindPosi", "frWindPosi", "rlWindPosi", "rrWindPosi")
-
-
-def _windows(pos: str) -> dict:
-    """构造四窗位置报文."""
-    return {k: pos for k in _WIN_KEYS}
-
-
 # (唯一后缀, 名称, 图标, cmdKey, cmdData, 是否等待结果)
+# ★ 2026-09-24：开/关尾门、开/关窗 已收敛到 cover.py（巴法云识别 cover，不识别 button）；
+#   寻车另有 switch 版本（sw_find_car）。此处仅保留 button 面板里仍常用的项。
 BUTTONS = (
     ("veh_search", "寻车", "mdi:car-search",
      "remoteVehSearch", {"searchType": "0"}, False),
-    ("plg_open", "开尾门", "mdi:car-door",
-     "remoteVehPlgControl", {"plgPosi": "100"}, True),
-    ("plg_close", "关尾门", "mdi:car-door",
-     "remoteVehPlgControl", {"plgPosi": "0"}, True),
-    ("window_open", "开窗", "mdi:window-open",
-     "remoteVehWdwControl", _windows("99"), True),
-    ("window_close", "关窗", "mdi:window-closed",
-     "remoteVehWdwControl", _windows("0"), True),
     ("engine_start", "远程启动", "mdi:engine",
      "remoteVehAuth", {}, True),
 )

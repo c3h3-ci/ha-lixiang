@@ -43,7 +43,8 @@ from .signer import LiCarSigner
 PLATFORMS: list[Platform] = [
     Platform.SENSOR, Platform.BINARY_SENSOR, Platform.DEVICE_TRACKER,
     Platform.LOCK, Platform.SWITCH, Platform.BUTTON, Platform.NUMBER,
-    Platform.CLIMATE, Platform.SELECT, Platform.NOTIFY,
+    Platform.CLIMATE, Platform.SELECT, Platform.NOTIFY, Platform.COVER,
+    Platform.FAN,
 ]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -141,6 +142,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # ★ 巴法云桥接（选项填了 uid 才启动；须在平台实体创建之后）
+    try:
+        from .bemfa import async_setup_bemfa
+        bridge = await async_setup_bemfa(hass, entry)
+        if bridge is not None:
+            hass.data[DOMAIN][entry.entry_id]["bemfa"] = bridge
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.warning("巴法云桥接启动失败: %s", err)
+
     return True
 
 
@@ -191,7 +202,43 @@ def _async_register_services(hass: HomeAssistant) -> None:
 
     hass.services.async_register(DOMAIN, SERVICE_REFRESH, _handle_refresh)
     hass.services.async_register(DOMAIN, SERVICE_WAKEUP, _handle_wakeup)
-    _LOGGER.debug("已注册服务: %s.refresh / %s.wakeup", DOMAIN, DOMAIN)
+
+    # ---- 车窗物理开/关（巴法/自动化用，不经过 HA cover 反向 UI）----
+    if not hass.services.has_service(DOMAIN, "open_windows"):
+
+        async def _handle_open_windows(call) -> None:
+            pct = int((call.data or {}).get("percent", 99))
+            await _foreach_window_entity(hass, "async_physical_open", pct)
+
+        async def _handle_close_windows(call) -> None:
+            await _foreach_window_entity(hass, "async_physical_close")
+
+        hass.services.async_register(DOMAIN, "open_windows", _handle_open_windows)
+        hass.services.async_register(DOMAIN, "close_windows", _handle_close_windows)
+
+    _LOGGER.debug("已注册服务: %s.refresh / %s.wakeup / %s.open_windows / %s.close_windows",
+                  DOMAIN, DOMAIN, DOMAIN, DOMAIN)
+
+
+async def _foreach_window_entity(hass: HomeAssistant, method: str, *args) -> None:
+    """对所有 lixiang_auto 车窗 cover 调用物理方法。"""
+    try:
+        from homeassistant.helpers import entity_registry as er
+        reg = er.async_get(hass)
+        comp = hass.data.get("entity_components", {}).get("cover")
+        for ent in reg.entities.values():
+            if ent.platform != DOMAIN or ent.domain != "cover":
+                continue
+            if "cover_window" not in (ent.unique_id or ""):
+                continue
+            obj = None
+            if comp is not None and hasattr(comp, "get_entity"):
+                obj = comp.get_entity(ent.entity_id)
+            if obj is not None and hasattr(obj, method):
+                fn = getattr(obj, method)
+                await fn(*args)
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.warning("车窗物理动作 %s 失败: %s", method, err)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -206,6 +253,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 poller.stop()
             except Exception:  # noqa: BLE001
                 _LOGGER.exception("停止通知轮询失败")
+        bridge = data.get("bemfa")
+        if bridge is not None:
+            try:
+                await bridge.async_stop()
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("停止巴法云桥接失败")
         hass.data[DOMAIN].pop(entry.entry_id)
         # 最后一个条目卸载时移除服务
         if not hass.data.get(DOMAIN):

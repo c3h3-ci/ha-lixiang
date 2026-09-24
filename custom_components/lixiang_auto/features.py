@@ -112,6 +112,12 @@ FEATURE_PROBES: dict[str, list[str]] = {
         "Vehicle.Cabin.Seat.SLSeatHeatState",
         "Vehicle.Cabin.Seat.SRSeatHeatState",
     ],
+    # 三排：有热/通风信号即认为支持（弱探测，避免误杀无中排车型）
+    "三排座椅": [
+        "Vehicle.Cabin.Seat.TLSeatHeatState",
+        "Vehicle.Cabin.Seat.TRSeatHeatState",
+        "Vehicle.Cabin.Seat.TLSeatVentilationState",
+    ],
     "旋转座椅": [
         "Vehicle.Cabin.Seat.RotatableStatus",
         "Vehicle.Seat.Rotatable.Status",
