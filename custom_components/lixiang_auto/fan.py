@@ -116,11 +116,18 @@ SEAT_FANS = (
      "seat_fl_vent", "flSeatVentSw", "座椅加热"),
     ("seat_fr_vent", "副驾座椅通风", "mdi:car-seat-cooler",
      "seat_fr_vent", "frSeatVentSw", "座椅加热"),
-    # ★ 二排（L6 五座车的二排）
+    # ★ 二排（L6 五座车的二排：左/中/右三个位置）
     ("seat_sl_heat", "二排左座椅加热", "mdi:car-seat-heater",
      "seat_sl_heat", "secLSeatHeatSw", "二排座椅"),
     ("seat_sr_heat", "二排右座椅加热", "mdi:car-seat-heater",
      "seat_sr_heat", "secRSeatHeatSw", "二排座椅"),
+    # ★ 2026-09-24 新增（用户反馈"二排中间是有的"）：
+    #   实测 SMSeatHeatState 存在（二排中加热状态信号）
+    #   ⚠️ App 里【没有】对应的 controlType（只有 secL/secR）
+    #      这里用推测命名 secMSeatHeatSw —— 若服务端拒绝，
+    #      改成只显示状态（移除本项）
+    ("seat_sm_heat", "二排中座椅加热", "mdi:car-seat-heater",
+     "seat_sm_heat", "secMSeatHeatSw", "二排座椅"),
     ("seat_sl_vent", "二排左座椅通风", "mdi:car-seat-cooler",
      "seat_sl_vent", "secLSeatVentSw", "二排座椅"),
     ("seat_sr_vent", "二排右座椅通风", "mdi:car-seat-cooler",
