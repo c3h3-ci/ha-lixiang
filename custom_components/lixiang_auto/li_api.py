@@ -360,7 +360,15 @@ class LiApiClient:
             return True
 
         def _fetch(batch: list[str], depth: int = 0) -> None:
-            """容错抓取: 失败则二分, 直到定位到坏 path 并跳过."""
+            """容错抓取: 失败则二分, 直到定位到坏 path 并跳过.
+
+            ★ 2026-09-24 改进（修复"VSS 批次(2)反复失败, 跳过"）：
+              原逻辑：深度 >= 4 就【整批放弃】→ 44 个有效信号一起丢失。
+
+              新逻辑：深度超限后改为【逐条尝试】——
+                坏路径只有 1~2 个，逐条能救回其余 98% 的信号。
+                代价：最坏情况多发 N 次请求，但只在异常批上发生。
+            """
             if not batch:
                 return
             if _one_batch(batch):
@@ -368,9 +376,18 @@ class LiApiClient:
             if len(batch) == 1:
                 _LOGGER.debug("VSS path 无效, 跳过: %s", batch[0])
                 return
+
+            # ★ 深度超限 → 逐条尝试（而不是整批放弃）
             if depth >= 4:
-                _LOGGER.warning("VSS 批次(%d)反复失败, 跳过", len(batch))
+                recovered = 0
+                for one in batch:
+                    if _one_batch([one]):
+                        recovered += 1
+                _LOGGER.info(
+                    "VSS 批次(%d)二分失败，逐条尝试救回 %d/%d 个信号",
+                    len(batch), recovered, len(batch))
                 return
+
             mid = len(batch) // 2
             _fetch(batch[:mid], depth + 1)
             _fetch(batch[mid:], depth + 1)
