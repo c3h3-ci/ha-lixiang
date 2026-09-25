@@ -4,3 +4,6 @@ __pycache__/
 *.log
 .vscode/
 .idea/
+
+# Agent 工作流状态（含本机路径/内网 IP，不提交）
+.dsh-state/

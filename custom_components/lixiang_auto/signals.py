@@ -1330,9 +1330,9 @@ SIGNALS: dict[str, SignalSpec] = {
     "xmode": SignalSpec(
         key="xmode",
         path="Vehicle.CarSettings.MoveOffOnTime.Xmode",
-        name="离车模式",
+        name="按时出发",
         freq=Freq.MID,
-        icon="mdi:car-off",
+        icon="mdi:clock-start",
         category="设置",
     ),
     # ---- 空调温度色 ----

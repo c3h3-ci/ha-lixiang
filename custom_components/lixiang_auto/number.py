@@ -48,9 +48,14 @@ AC_COUNTDOWN = "15"
 #     cmdKey: remote_charge_control
 #     controlType='1' → chargingLimit（充电上限）
 CMD_CHARGE = "remote_charge_control"
-CHARGE_MIN = 50
+# ★ 2026-09-25 修正（teammate 从 App 截图 + 反编译核实）：
+#   App 的充电上限滑块范围是 80~100（步进 1）：
+#     minValue:80, maxValue:100, step:1, lowerLimit:U（= max(动态, 80)）
+#   依据：index.vehicle.js 的 ChargeSetting.ChargingLimit 滑块配置
+#   原先我写 50~100 步进 5 是【猜的】，与 App 不符。
+CHARGE_MIN = 80
 CHARGE_MAX = 100
-CHARGE_STEP = 5
+CHARGE_STEP = 1
 
 # ★ 2026-09-24 乐观更新有效期（秒）
 #   依据：HA 轮询间隔 DEFAULT_SCAN_INTERVAL_SECONDS = 60 秒

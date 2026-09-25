@@ -115,7 +115,7 @@ SWITCHES = (
      "ac_heat_fast", "acHeatFast", "空调"),
     ("ac_cool_fast", "空调快速制冷", "mdi:snowflake",
      "ac_cool_fast", "acCoolFast", "空调"),
-    ("ac_defrost", "空调除霜", "mdi:snowflake-melt",
+    ("ac_defrost", "除雪除冰", "mdi:snowflake-melt",
      "ac_defrost", "dfstSw", "空调"),
     # ★ 2026-09-24 补充：充电启停
     #   ★ 这个开关的 cmdKey 不是固定的（与其他不同）：
