@@ -147,10 +147,15 @@ SWITCHES = (
     #     "2" → batteryInsulation（电池保温）
     #
     #   ★ 2009 的原因是 cmdKey 不存在，不是功能不支持。
-    # ★ feat 传 None → 不做车型功能过滤
-    #   （"充电"不是可探测的车型能力，所有理想车都支持充电）
-    ("charging", "充电", "mdi:battery-charging",
-     "charge_status", "__CHARGING__", None),
+    # ★ 2026-09-24 修正（用户反馈"充电开关提示错误"）：
+    #   ❌ 原来的「充电」用 ChargeStatus==3（正在充电）判断，
+    #      语义混乱：App 里这是【状态】不是【开关】，
+    #      满电或未插枪时显示"关闭"，与用户预期不符。
+    #   ✅ 改为 App 真正提供的开关：预约充电
+    #      AppointmentSettings.title = "预约充电"
+    #      状态源：ScheduledCharging.Switch
+    ("scheduled_charge", "预约充电", "mdi:calendar-clock",
+     "scheduled_charge_switch", "__SCHEDULED__", None),
     # ★ 2026-09-24 新增：电池保温
     #   App 命令：cmdKey=remote_charge_control
     #            controlType='2', batteryInsulation: "1"/"0"
@@ -236,7 +241,11 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
 
         if sig and sig.get("value") is not None:
             v = sig["value"]
-            if self._control_type == "__CHARGING__":
+            if self._control_type == "__SCHEDULED__":
+                # 预约充电开关：Switch 信号是 "0"/"1" 或 True/False
+                s2 = str(v).lower()
+                vss_val = s2 in ("1", "true")
+            elif self._control_type == "__CHARGING__":
                 try:
                     vss_val = int(float(v)) == 3      # 3 = 充电中
                 except (TypeError, ValueError):
@@ -346,14 +355,29 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
           ⚠️ 历史错误：曾用 remote_charging_start/stop 作为 cmdKey
              （这两个不存在）→ 返回 2009。已于 2026-09-24 修正。
         """
-        if self._control_type == "__CHARGING__":
-            # ★ 2026-09-24 修正：真正的 cmdKey 是 remote_charge_control
-            #   （remote_charging_start/stop 不存在 → 返回 2009）
+        if self._control_type == "__SCHEDULED__":
+            # ★ 预约充电开关：
+            #   App 是把「开关 + 模式 + 时间区间」打包下发的：
+            #     controlType='3', OrderChargingSwitch, OrderChargingMode,
+            #     reserveStartTime, NewReserveFinishTime, isContinue
+            #   这里读当前模式/时间，只改开关位。
+            import time as _t
+            vss = (self.coordinator.data or {}).get("vss", {})
+
+            def _raw(k: str, dflt: str) -> str:
+                sig = vss.get(k) or {}
+                v = sig.get("value")
+                return str(v).strip('"') if v is not None else dflt
+
             cmd_key = "remote_charge_control"
             cmd_data = {
                 "statusControlRequest": 255,
-                "controlType": "3",                       # 3 = 充电启停
+                "controlType": "3",
                 "OrderChargingSwitch": "1" if level != 0 else "0",
+                "OrderChargingMode": _raw("charge_order_mode", "2"),
+                "reserveStartTime": _raw("scheduled_charge_start", "23:00"),
+                "NewReserveFinishTime": _raw("scheduled_charge_end", "08:00"),
+                "isContinue": "0",
             }
         elif self._control_type == "__INSULATION__":
             # ★ 2026-09-24 新增：电池保温

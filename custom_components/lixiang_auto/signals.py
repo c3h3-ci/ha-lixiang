@@ -811,6 +811,9 @@ SIGNALS: dict[str, SignalSpec] = {
         freq=Freq.MID,
         icon="mdi:clock-end",
         category="充电桩",
+        # ★ 2026-09-24 改诊断类：已由 time 实体提供可设置的
+        #   「充电开始/结束时间」，此只读 sensor 冗余
+        diagnostic=True,
     ),
     "scheduled_charge_start": SignalSpec(
         key="scheduled_charge_start",
@@ -819,6 +822,9 @@ SIGNALS: dict[str, SignalSpec] = {
         freq=Freq.MID,
         icon="mdi:clock-start",
         category="充电桩",
+        # ★ 2026-09-24 改诊断类：已由 time 实体提供可设置的
+        #   「充电开始/结束时间」，此只读 sensor 冗余
+        diagnostic=True,
     ),
     "scheduled_charge_state": SignalSpec(
         key="scheduled_charge_state",

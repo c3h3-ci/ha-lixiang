@@ -44,10 +44,14 @@ DEFAULT_OPTION = "前排空调"
 # ★ 2026-09-24 新增：充电模式
 #   枚举来源（App index.vehicle.js）：
 #     w = { StartOnTime: 0, EndOnTime: 1, LowestPrice: 2 }
+# ★ 名称按 App 文案（ChargeSetting.AppointmentTime）：
+#   scheduledStart = "按时开始"
+#   scheduledEnd   = "按时结束"
+#   OffPeakCharging = "低价充电"
 CHARGING_MODES = {
-    "开始时间充电": 0,      # StartOnTime
-    "结束时间充满": 1,      # EndOnTime
-    "低价充电": 2,          # LowestPrice（谷电时段，App 显示"低价充电"）
+    "按时开始": 0,      # StartOnTime —— "{开始时间}开始充电，充到上限结束"
+    "按时结束": 1,      # EndOnTime   —— "预估时长，在{结束时间}前充满"
+    "低价充电": 2,      # LowestPrice —— "{开始时间}开始充电，{结束时间}前结束"
 }
 _MODE_TO_VALUE = CHARGING_MODES
 _VALUE_TO_MODE = {v: k for k, v in CHARGING_MODES.items()}
