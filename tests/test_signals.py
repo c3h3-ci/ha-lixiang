@@ -180,6 +180,17 @@ class TestFreqEquivalence:
         "Vehicle.Cabin.Seat.TLSeatVentilationState",
         "Vehicle.Cabin.Seat.TRSeatVentilationState",
     }
+    # ★ 2026-09-26 实车验证发现：以下可控实体用的信号原本是 MID（1小时），
+    #   导致实体显示 unknown。提升为 HIGH 后需豁免等价性检查。
+    CHARGE_FREQ_FIXED = {
+        "Vehicle.Powertrain.ChargingPile.ChargingLimit",
+        "Vehicle.Powertrain.ChargingPile.ScheduledCharging.Switch",
+        "Vehicle.Powertrain.ChargingPile.ScheduledCharging.ReserveStartTime",
+        "Vehicle.Powertrain.ChargingPile.ScheduledCharging.NewReserveFinishTime",
+        "Vehicle.Powertrain.ChargingPile.ScheduledCharging.State",
+        "Vehicle.Powertrain.Battery.ACChgrActualConnSts",
+    }
+
     MANUAL_PATHS = {
         "Vehicle.Cabin.RmtVirtualKeyAuthSts",
         "Vehicle.Account.Cloud.VehicleAccounts",
@@ -239,7 +250,7 @@ class TestFreqEquivalence:
         lo_new = {s.path for s in sg.by_freq(sg.Freq.LOW)}
 
         # 手工补充的信号 + 座椅频率修正 → 豁免等价性检查
-        exc = self.MANUAL_PATHS | self.SEAT_FREQ_FIXED
+        exc = self.MANUAL_PATHS | self.SEAT_FREQ_FIXED | self.CHARGE_FREQ_FIXED
         assert hi_new - exc == hi_old - exc, \
             f"HIGH 分组不一致: {(hi_new - exc) ^ (hi_old - exc)}"
         assert mid_new - exc == mid_old - exc, \

@@ -214,3 +214,47 @@ class TestPollingFrequency:
             assert spec.freq == Freq.HIGH, (
                 f"{key} 应为 HIGH 频率（当前 {spec.freq}）—— "
                 "座椅是可控实体，低频轮询会导致状态显示滞后")
+
+class TestControllableSignalsAreHighFreq:
+    """★ 2026-09-26 实车验证发现：6 个可控信号用了 MID（1小时）频率，
+    导致实体显示 unknown。
+
+    规则：能被 HA 控制的实体，其状态信号必须是 HIGH 频率。
+    """
+
+    # 可控实体引用的 state_key（number/switch/time/select 的状态源）
+    CONTROLLABLE_STATE_KEYS = {
+        "charge_limit",              # number.充电上限
+        "scheduled_charge_switch",   # switch.预约充电
+        "scheduled_charge_start",    # time.充电开始时间
+        "scheduled_charge_end",      # time.充电结束时间
+        "charge_order_mode",         # select.充电模式
+        "ac_set_temp",               # number.空调温度
+        "ac_defrost", "ac_heat_fast", "ac_cool_fast", "wheel_heat",
+        "sentry", "sentry_switch", "battery_insulation",
+        "door_trunk", "window_main", "window_copilot",
+        "window_back_left", "window_back_right",
+    }
+
+    def test_controllable_state_keys_are_high_freq(self):
+        """可控实体的状态源必须 HIGH —— 否则控制后 1 小时才更新显示。"""
+        import re
+        from pathlib import Path
+
+        src = (Path(__file__).resolve().parent.parent
+               / "custom_components" / "lixiang_auto" / "signals.py").read_text()
+
+        specs = {}
+        for m in re.finditer(r'"(\w+)":\s*SignalSpec\((.*?)\n    \),', src, re.S):
+            fr = re.search(r'freq=(Freq\.\w+)', m.group(2))
+            specs[m.group(1)] = fr.group(1) if fr else "?"
+
+        wrong = []
+        for k in self.CONTROLLABLE_STATE_KEYS:
+            if k in specs and specs[k] != "Freq.HIGH":
+                wrong.append(f"{k}={specs[k]}")
+
+        assert not wrong, (
+            f"以下可控实体信号不是 HIGH 频率: {wrong}\n"
+            "可控实体的状态源必须 HIGH，否则用户控制后要等很久才看到变化。"
+        )
