@@ -126,6 +126,59 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
         "Vehicle.ConnectManager.ConnectStatus.xcu",
     ]
 
+    # ---------- 失败处理（★ 2026-09-26 补齐：此前 _notify_failure /
+    #            _clear_failure 被调用但从未定义，导致每次轮询成功都抛
+    #            AttributeError，所有实体变 unavailable）----------
+
+    @property
+    def health(self) -> dict:
+        """健康状态（供 diagnostics 使用）。"""
+        return {
+            "fail_count": self._fail_count,
+            "last_error": self._last_error,
+            "notified": self._fail_notified,
+        }
+
+    async def _notify_failure(self, n: int) -> None:
+        """连续失败达到阈值（≥5 次）→ 发 HA 持久通知（用户可见）。
+
+        幂等：同一次连续失败只通知一次（_fail_notified 标记）。
+        """
+        if self._fail_notified:
+            return
+        try:
+            from homeassistant.components import persistent_notification as pn
+            pn.async_create(
+                self.hass,
+                f"理想汽车轮询已连续失败 {n} 次。\n\n"
+                f"最后错误：{self._last_error}\n\n"
+                "可能原因：网络中断 / 车辆离线 / 凭据失效。\n"
+                "恢复后本通知会自动消失。",
+                title="理想汽车连接异常",
+                notification_id=f"lixiang_poll_fail_{self._entry.entry_id}",
+            )
+            self._fail_notified = True
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("发通知失败（忽略）: %s", err)
+
+    async def _clear_failure(self) -> None:
+        """轮询恢复正常 → 清除持久通知。
+
+        幂等：没有通知过就不操作。
+        """
+        if not self._fail_notified:
+            return
+        try:
+            from homeassistant.components import persistent_notification as pn
+            pn.async_dismiss(
+                self.hass,
+                notification_id=f"lixiang_poll_fail_{self._entry.entry_id}",
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("清通知失败（忽略）: %s", err)
+        finally:
+            self._fail_notified = False
+
     async def _async_online(self) -> bool | None:
         """探测车辆是否在线。True=在线 / False=离线 / None=未知。
 
