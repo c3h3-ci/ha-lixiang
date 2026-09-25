@@ -115,7 +115,7 @@ BINARY_DESCRIPTIONS: tuple[tuple[BinarySensorEntityDescription, str], ...] = (
     (BinarySensorEntityDescription(key="charge_fault", name="充电故障",
         device_class=BinarySensorDeviceClass.PROBLEM, icon="mdi:alert-circle"), "warn"),
     (BinarySensorEntityDescription(key="fuel_low_warning", name="油量低告警",
-        device_class=BinarySensorDeviceClass.PROBLEM, icon="mdi:fuel-alert"), "warn"),
+        device_class=BinarySensorDeviceClass.PROBLEM, icon="mdi:gas-station-off"), "warn"),
     (BinarySensorEntityDescription(key="low_vol_flag", name="低压电源标志",
         icon="mdi:flag"), "warn"),
     # ---- 功能开关（on = 开启）----
@@ -124,7 +124,7 @@ BINARY_DESCRIPTIONS: tuple[tuple[BinarySensorEntityDescription, str], ...] = (
     (BinarySensorEntityDescription(key="wheel_heat", name="方向盘加热",
         icon="mdi:steering"), "heat"),
     (BinarySensorEntityDescription(key="provision_auth", name="车辆授权",
-        icon="mdi:key-check"), "conn"),
+        icon="mdi:key-chain-variant"), "conn"),
     # ---- JSON 字段判读 ----
     (BinarySensorEntityDescription(key="sentry", name="哨兵模式",
         icon="mdi:shield-car"), "json:sentinelStatus"),

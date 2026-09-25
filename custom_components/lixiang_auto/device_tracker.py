@@ -55,7 +55,7 @@ class LiCarTracker(CoordinatorEntity, TrackerEntity):
 
     _attr_has_entity_name = True
     _attr_name = "车辆位置"
-    _attr_icon = "mdi:car-navigation"
+    _attr_icon = "mdi:navigation-variant"
 
     def __init__(self, coordinator, vin: str) -> None:
         super().__init__(coordinator)

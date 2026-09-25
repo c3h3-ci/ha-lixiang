@@ -446,7 +446,7 @@ SIGNALS: dict[str, SignalSpec] = {
         freq=Freq.MID,
         semantics=Semantics.ALARM,
         device_class="PROBLEM",
-        icon="mdi:fuel-alert",
+        icon="mdi:gas-station-off",
         platforms=frozenset({'binary_sensor'}),
     ),
     "hu_diag": SignalSpec(
@@ -760,7 +760,7 @@ SIGNALS: dict[str, SignalSpec] = {
         name="车辆授权",
         freq=Freq.LOW,
         semantics=Semantics.CONNECTED,
-        icon="mdi:key-check",
+        icon="mdi:key-chain-variant",
         platforms=frozenset({'binary_sensor'}),
     ),
     "range_elec_cltc": SignalSpec(

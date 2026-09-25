@@ -94,7 +94,9 @@ class LiCarTrunkCover(CoordinatorEntity, CoverEntity):
 
     _attr_has_entity_name = True
     _attr_name = "尾门"
-    _attr_icon = "mdi:car-door"
+    # ★ 2026-09-24 修正图标（用户反馈）：car-door 是【侧车门】（带门把手），
+    #   不是尾门语义。car-back 是【从车尾看的车】，更贴合尾门。
+    _attr_icon = "mdi:car-back"
     _attr_device_class = None  # 不标 garage：通用开合语义
     _attr_supported_features = (
         CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE
@@ -174,7 +176,10 @@ class LiCarWindowCover(CoordinatorEntity, CoverEntity):
 
     _attr_has_entity_name = True
     _attr_name = "车窗"
-    _attr_icon = "mdi:car-window"
+    # ★ 2026-09-24 修正图标（用户反馈"车窗没图标"）：
+    #   ❌ mdi:car-window 在 MDI 图标库里【不存在】→ HA 显示不出图标
+    #   ✅ mdi:window-closed-variant 是四格窗形，语义中性
+    _attr_icon = "mdi:window-closed-variant"
     _attr_device_class = None
     _attr_supported_features = (
         CoverEntityFeature.OPEN
