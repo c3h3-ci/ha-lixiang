@@ -198,6 +198,86 @@ VEHICLE_MODEL_CODES = {
 
 
 
+# ============================================================================
+# ★ variableModel：中文配置串（2026-09-26 发现，比 ConfigCode 友好）
+# ============================================================================
+# 来源：GET /saos-vehicle-api/v2-0/vehicles/basics 的 vehicleInfo.variableModel
+#
+# 实测我们的车（理想L6 Pro）：
+#   "AD PRO+无踏板+电池CATL+后驱汇川+伯特利后卡钳+天纳克减振器
+#    +西菱增压器+德赛XCU+威孚催化剂+斯泰必鲁斯背门撑杆+无冰箱+高级音响"
+#
+# 相比 App 的 ConfigCode（{"vehRefrigerator":"LI2", ...} 需服务端字典翻译），
+# variableModel 是【中文，直接可读】，能更可靠地判断硬件有无。
+#
+# ⚠️ 注意：这是【配置串】，不是【功能开关】。
+#    它描述"选装了什么"，不描述"App 是否支持某功能"。
+#    所以只用于硬件判断（冰箱/踏板），功能开关仍看 KNOWN_FEATURES / VSS。
+
+# 关键词 → 功能名（出现即表示【有】该硬件）
+_VM_POSITIVE = {
+    "冰箱": ("冰箱", "冷藏", "冷热"),
+    "空气悬架": ("空气悬架", "魔毯", "空悬"),
+    "电动踏板": ("踏板",),          # 与 "无踏板" 区分，见下
+    "电动尾翼": ("尾翼",),
+    "高级音响": ("高级音响", "铂金音响"),
+}
+
+# 关键词 → 功能名（出现即表示【无】该硬件）
+_VM_NEGATIVE = {
+    "无冰箱": "冰箱",
+    "无踏板": "电动踏板",
+    "无空悬": "空气悬架",
+    "无尾翼": "电动尾翼",
+}
+
+
+def parse_variable_model(vm: str | None) -> dict[str, Any]:
+    """解析 variableModel 中文配置串，返回硬件推断。
+
+    返回:
+        {
+            "raw": ["AD PRO", "无踏板", ...],
+            "autopilot": "AD PRO" | None,
+            "battery": "电池CATL" | None,
+            "drive": "后驱汇川" | None,
+            "factors": {功能名: bool},   # 仅含【能明确判断】的
+        }
+
+    ★ 只返回能明确判断的项；模糊的（如"高级音响"）也返回，但调用方可忽略。
+    """
+    out: dict[str, Any] = {"raw": [], "factors": {}}
+    if not vm:
+        return out
+
+    parts = [p.strip() for p in str(vm).split("+") if p.strip()]
+    out["raw"] = parts
+
+    for p in parts:
+        if p.startswith("AD"):
+            out["autopilot"] = p
+        elif p.startswith("电池"):
+            out["battery"] = p
+        elif "驱" in p:
+            out["drive"] = p
+
+    joined = "+".join(parts)
+
+    # ① 先处理否定（"无冰箱" 优先于 "冰箱"）
+    for neg_kw, feat in _VM_NEGATIVE.items():
+        if neg_kw in joined:
+            out["factors"][feat] = False
+
+    # ② 再处理肯定（已被否定覆盖的不改）
+    for feat, kws in _VM_POSITIVE.items():
+        if feat in out["factors"]:
+            continue          # 已由否定确定
+        if any(kw in joined for kw in kws):
+            out["factors"][feat] = True
+
+    return out
+
+
 def _ts_fresh(ts: str, max_days: float = 7.0) -> bool:
     """判断信号时间戳"存在"（非 "0" / 非空）。
 
@@ -276,6 +356,32 @@ def _hardcoded_features(li_api: Any) -> dict[str, Any] | None:
     return hard
 
 
+def _variable_model_factors(li_api: Any) -> dict[str, bool]:
+    """从 variableModel 中文配置串推断硬件有无。
+
+    数据源：get_vehicles() → vehicleInfo.variableModel
+    失败时返回空 dict（不影响主流程）。
+
+    ★ 与 VSS 探测的关系：
+      · variableModel 更【权威】（服务端明确声明"无冰箱"）
+      · 但只有部分字段（冰箱/踏板/悬架/尾翼）
+      · 其余功能仍走 VSS 探测
+    """
+    try:
+        veh = li_api.get_vehicles() or []
+        if not veh:
+            return {}
+        info = veh[0].get("vehicleInfo") or {}
+        vm = info.get("variableModel")
+        if not vm:
+            return {}
+        parsed = parse_variable_model(vm)
+        return dict(parsed.get("factors") or {})
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("variableModel 读取失败（忽略）: %s", err)
+        return {}
+
+
 def detect_features(li_api: Any) -> dict[str, bool]:
     """探测车辆实际支持的功能。
 
@@ -306,6 +412,19 @@ def detect_features(li_api: Any) -> dict[str, bool]:
         remaining = {k: v for k, v in FEATURE_PROBES.items() if k not in result}
     else:
         remaining = FEATURE_PROBES
+
+    # ①-b ★ 2026-09-26：用 variableModel（中文配置串）校准硬件判断
+    #   来源：GET /saos-vehicle-api/v2-0/vehicles/basics → vehicleInfo.variableModel
+    #   例："AD PRO+无踏板+无冰箱+高级音响"
+    #   ★ 比 VSS 探测更可靠（服务端明确说了"无冰箱"）
+    vm_factors = _variable_model_factors(li_api)
+    if vm_factors:
+        _LOGGER.debug("variableModel 硬件判断: %s", vm_factors)
+        for feat, val in vm_factors.items():
+            if feat in FEATURE_PROBES or feat in result:
+                result[feat] = val
+        # 已由 variableModel 确定的，不再走 VSS（避免被误判）
+        remaining = {k: v for k, v in remaining.items() if k not in vm_factors}
 
     for feat, paths in remaining.items():
         # ★ 判据 (2026-09-23 修正):
