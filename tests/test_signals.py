@@ -354,7 +354,12 @@ class TestDescriptionEquivalence:
     # ★ 2026-09-24：泊车状态/进度改为诊断类
     #   原因：ParkStatus 服务端从不返回；FSDBootProgress 值恒为 0。
     #   泊车状态在 App 里走【实时事件通道】，VSS 拿不到。
-    NEWLY_DIAGNOSTIC = {"park_status", "park_fsd_progress"}
+    NEWLY_DIAGNOSTIC = {
+        "park_status", "park_fsd_progress",
+        # ★ 2026-09-24：充电开始/结束时间已由 time 实体提供可设置版本
+        #   （signal 层面的只读 sensor 冗余）
+        "scheduled_charge_start", "scheduled_charge_end",
+    }
 
     def test_diagnostic_matches(self):
         """★ diagnostic 判定必须一致（影响默认启用与否）
