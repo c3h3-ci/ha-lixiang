@@ -49,12 +49,37 @@ _LOGGER = logging.getLogger("lixiang_auto")
 # 集成目录（本文件所在目录）
 _INTEGRATION_DIR = Path(__file__).resolve().parent
 
+def _ha_config_dir() -> Path:
+    """HA 配置目录（动态获取，不硬编码 /config）。
+
+    ★ 2026-09-26：原来写死 Path("/config/...")，
+      但 HA 的 config 目录可被用户改（如 docker 挂载到别处）。
+      优先用 HA 的 API，取不到再回退常见的 /config。
+    """
+    try:
+        from homeassistant.core import HomeAssistant  # noqa: F401
+        from homeassistant.config import get_default_config_dir
+        return Path(get_default_config_dir())
+    except Exception:  # noqa: BLE001
+        pass
+    # 回退：环境变量 → /config
+    import os
+    return Path(os.environ.get("HA_CONFIG_DIR") or "/config")
+
+
 # 候选密钥文件位置（按顺序尝试）
-_SECRET_FILES = (
-    _INTEGRATION_DIR / ".secrets.json",           # 集成目录内
-    Path("/config/.lixiang_secrets.json"),        # HA 配置根目录
-    Path.home() / ".lixiang_secrets.json",        # 用户家目录
-)
+def _secret_file_candidates() -> tuple[Path, ...]:
+    """密钥文件候选位置（动态计算，避免硬编码路径）。"""
+    home = Path.home()
+    return (
+        _INTEGRATION_DIR / ".secrets.json",          # 集成目录内
+        _ha_config_dir() / ".lixiang_secrets.json",  # HA 配置根目录
+        home / ".lixiang_secrets.json",              # 用户家目录
+    )
+
+
+# 兼容旧代码（模块级常量，首次导入时求值）
+_SECRET_FILES = _secret_file_candidates()
 
 # 环境变量名 → 配置键
 _ENV_MAP = {

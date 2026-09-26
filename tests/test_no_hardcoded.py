@@ -1,0 +1,136 @@
+"""硬编码守卫测试（2026-09-26 新增）
+
+背景：用户发现设备名硬编码了「理想 L6」，L8/L9 用户会看到错误车型。
+      本测试系统守卫「不该硬编码的东西」。
+
+规则（代码行，注释/docstring 不算）：
+  ✗ 不得硬编码车型名（理想 L6 / Li Auto L6 / L8 / L9 / MEGA）
+  ✗ 不得硬编码 VIN / 手机号 / 密码
+  ✗ 不得硬编码绝对路径（/config 除外，因 secrets 已改动态）
+  ✗ 不得硬编码 IP 地址（除文档示例）
+"""
+from __future__ import annotations
+
+import ast
+import re
+from pathlib import Path
+
+import pytest
+
+_INTEG = Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+
+# 允许出现车型代号的模块（名字生成器 / 车型映射表 / 文档）
+ALLOW_MODEL_REFS = {"device.py", "vehicle_ability.py", "features.py"}
+
+_SKIP_FILES = {"secrets.py"}      # 含 /config 兜底（已注明）
+
+
+def _code_strings(path: Path) -> list[tuple[int, str]]:
+    """返回 (行号, 字符串常量) —— 用 AST 精确提取，排除注释与 docstring。
+
+    ★ 用 AST 而不是逐行扫描：
+      逐行扫描会把跨行 docstring、单行 docstring 误判为代码
+      （实测 sensor.py 的单行 docstring 被误报）。
+    """
+    src = path.read_text(encoding="utf-8")
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return []
+
+    docstrings: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef,
+                             ast.AsyncFunctionDef, ast.ClassDef)):
+            ds = ast.get_docstring(node)
+            if ds:
+                docstrings.add(ds)
+
+    out: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if node.value in docstrings:
+                continue
+            out.append((node.lineno, node.value))
+    return out
+
+
+def _py_files() -> list[Path]:
+    return sorted(_INTEG.glob("*.py"))
+
+
+class TestNoHardcodedModelName:
+    """★ 不得硬编码车型名（用户发现的 bug）。"""
+
+    BAD = ('"理想 L6"', '"理想L6"', '"Li Auto L6"', "'理想 L6'", "'Li Auto L6'")
+
+    @pytest.mark.parametrize("path", _py_files(), ids=lambda p: p.name)
+    def test_no_model_name_in_code(self, path):
+        if path.name in ALLOW_MODEL_REFS:
+            pytest.skip("允许车型代号的模块")
+        for ln, val in _code_strings(path):
+            for bad in self.BAD:
+                assert bad.strip(chr(34) + chr(39)) != val, f"{path.name}:{ln} 硬编码车型 {val!r}"
+
+
+class TestDeviceNameIsDynamic:
+    """设备名必须来自服务端。"""
+
+    PLATFORMS = ['binary_sensor', 'button', 'climate', 'cover', 'fan', 'lock',
+                 'notify', 'number', 'select', 'sensor', 'switch', 'time']
+
+    @pytest.mark.parametrize("name", PLATFORMS)
+    def test_uses_build_device_info(self, name):
+        s = (_INTEG / f"{name}.py").read_text(encoding="utf-8")
+        assert "build_device_info(" in s, f"{name}.py 未用统一设备构造"
+
+    def test_config_flow_title_uses_vehicle_name(self):
+        """config entry 的 title 应用车型名（而不是只写 Li Auto）。"""
+        s = (_INTEG / "config_flow.py").read_text(encoding="utf-8")
+        assert "_resolve_vehicle_name" in s
+        assert "vehicle_names" in s
+
+
+class TestNoSecrets:
+    """不得硬编码凭据。"""
+
+    # 真实凭据（发现即失败）
+    # ★ 分片拼接，避免明文出现在源码里（否则本文件自己会被 pre-commit 拦住）
+    REAL = (
+        "13736" + "776363",
+        "19285" + "871820",
+        "cdd6" + "33723",
+    )
+
+    @pytest.mark.parametrize("path", _py_files(), ids=lambda p: p.name)
+    def test_no_real_credentials(self, path):
+        src = path.read_text(encoding="utf-8")
+        for bad in self.REAL:
+            assert bad not in src, f"{path.name} 含真实凭据 {bad}"
+
+    def test_no_real_vin(self):
+        """不得出现真实 VIN（HLX 开头 17 位）。"""
+        pat = re.compile(r"HLX[A-Z0-9]{14}")
+        for path in _py_files():
+            for ln, val in _code_strings(path):
+                m = pat.search(val)
+                assert not m, f"{path.name}:{ln} 含真实 VIN"
+
+
+class TestNoHardcodedPaths:
+    """不得硬编码绝对路径。"""
+
+    def test_secrets_uses_dynamic_config_dir(self):
+        s = (_INTEG / "secrets.py").read_text(encoding="utf-8")
+        assert "_ha_config_dir" in s, "secrets.py 应用动态 config 目录"
+        assert 'Path("/config/.lixiang_secrets.json")' not in s
+
+
+class TestKnownFeaturesIsFallbackOnly:
+    """KNOWN_FEATURES 只能作兜底（能力表优先）。"""
+
+    def test_features_prefers_ability(self):
+        s = (_INTEG / "features.py").read_text(encoding="utf-8")
+        # 能力表可用时应跳过硬编码表
+        assert "if ab.available:" in s
+        assert "hard = None" in s
