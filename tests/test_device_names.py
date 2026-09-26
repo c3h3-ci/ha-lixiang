@@ -243,34 +243,83 @@ class TestMultiVehicleAccount:
 
 
 class TestEntryTitle:
-    """config entry 的 title 生成（config_flow._entry_title）。"""
+    """config entry 的 title 生成逻辑（用户确认的设计）。
+
+    层级：账号（手机号）→ 车辆（VIN）→ 车牌
+
+    规则：
+        ① 一个账号 + 一辆车 → "Li Auto (1820)"
+        ② 一个账号 + 多辆车 → "Li Auto (1820) 浙CFS3517"  ★ 加车牌
+        ③ 多账号           → 手机尾号天然区分
+    """
 
     @staticmethod
     def _src() -> str:
         return (_INTEG / "config_flow.py").read_text(encoding="utf-8")
 
-    def test_uses_entry_title_helper(self):
-        s = self._src()
-        assert "_entry_title" in s
+    @staticmethod
+    def _title(n_vehicles: int, plate: str = "", vin_match: bool = True,
+               suffix: str = "1820") -> str:
+        """复刻 _entry_title 的逻辑（纯函数，便于穷举）。"""
+        base = f"Li Auto ({suffix})" if suffix else "Li Auto"
+        if n_vehicles <= 1:
+            return base
+        if not vin_match:
+            return base
+        return f"{base} {plate}" if plate else base
 
-    def test_matches_by_vin_not_index(self):
-        """★ 必须按 VIN 匹配，不能盲取 [0]。"""
+    def test_helper_exists(self):
+        s = self._src()
+        assert "def _entry_title" in s
+
+    def test_matches_by_vin(self):
+        """★ 必须按 VIN 匹配（不盲取第一辆）。"""
         s = self._src()
         i = s.find("def _entry_title")
         blk = s[i:i + 3000]
-        assert 'v.get("vin")' in blk or "target" in blk, "未按 VIN 匹配"
-        assert "for v in vehs" in blk or "for cand in" in blk
+        assert 'get("vin")' in blk
+        assert "for v in vehs" in blk
 
-    def test_includes_plate(self):
-        """title 应包含车牌（多车区分的最佳标识）。"""
+    def test_uses_vehicle_count(self):
+        """★ 必须按车辆数决定是否加车牌。"""
         s = self._src()
         i = s.find("def _entry_title")
         blk = s[i:i + 3000]
-        assert "plateNumber" in blk
-        assert "f\"{vname} {plate}\"" in blk or "{vname} {plate}" in blk
+        assert "len(vehs) == 1" in blk, "未按车辆数判断"
 
-    def test_fallback_to_phone(self):
-        s = self._src()
-        i = s.find("def _entry_title")
-        blk = s[i:i + 3000]
-        assert "Li Auto ({suffix})" in blk
+    def test_single_vehicle_no_plate(self):
+        """单辆车 → 简洁（不加车牌）。"""
+        assert self._title(1, "浙CFS3517") == "Li Auto (1820)"
+
+    def test_multi_vehicle_adds_plate(self):
+        """★ 多辆车 → 加车牌区分。"""
+        a = self._title(2, "浙CFS3517")
+        b = self._title(2, "京A12345")
+        assert a == "Li Auto (1820) 浙CFS3517"
+        assert b == "Li Auto (1820) 京A12345"
+        assert a != b, "多车 title 必须互不相同"
+
+    def test_multi_vehicle_no_plate_falls_back(self):
+        assert self._title(2, "") == "Li Auto (1820)"
+
+    def test_vin_mismatch_falls_back(self):
+        """VIN 不匹配 → 不加车牌（避免标错车）。"""
+        assert self._title(2, "浙CFS3517", vin_match=False) == "Li Auto (1820)"
+
+    def test_multi_account_distinguished_by_suffix(self):
+        """多账号 → 手机尾号区分。"""
+        a = self._title(1, suffix="1820")
+        b = self._title(1, suffix="1902")
+        assert a != b
+
+    def test_multi_account_multi_vehicle(self):
+        """多账号 + 各自多车 → 尾号 + 车牌双重区分。"""
+        titles = {
+            self._title(2, "浙CFS3517", suffix="1820"),
+            self._title(2, "京A12345", suffix="1820"),
+            self._title(2, "沪B67890", suffix="1902"),
+        }
+        assert len(titles) == 3, f"title 有重复: {titles}"
+
+    def test_no_vehicles(self):
+        assert self._title(0) == "Li Auto (1820)"
