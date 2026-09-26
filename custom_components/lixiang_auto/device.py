@@ -125,9 +125,12 @@ def vehicle_names(li_api: Any, ability: Any = None,
             "model": cached.get("model") or cached.get("zh", ""),
             "spu": cached.get("spu", ""),
             "plate": cached.get("plate", ""),
+            "nickname": cached.get("nickname", ""),
+            "same_model": cached.get("same_model", False),
         }
 
-    zh = en = model = spu = plate = ""
+    zh = en = model = spu = plate = nickname = ""
+    same_model = False
 
     # ① 优先：服务端 vehicleNickname
     try:
@@ -146,15 +149,18 @@ def vehicle_names(li_api: Any, ability: Any = None,
         if v is not None:
             info = v.get("vehicleInfo") or {}
             spu = info.get("spu") or ""
-            zh = (info.get("vehicleNickname")
-                  or v.get("modelName")
-                  or v.get("seriesName")
-                  or "")
-            # ② 更具体的版本名（spu 通常含 Pro/Max）
-            if spu:
-                zh = spu
-            model = v.get("modelName") or zh
+            nickname = (info.get("vehicleNickname") or "").strip()
+            model_name = v.get("modelName") or v.get("seriesName") or ""
+            # ★ 优先 spu（最具体的版本，如「理想L6 Pro」）
+            zh = spu or nickname or model_name
+            model = model_name or zh
             plate = (info.get("plateNumber") or "").strip()
+            # ★ 2026-09-26：判断「同账号是否有多辆同款车」——同名时需加区分符
+            same_model = sum(
+                1 for c in veh
+                if ((c.get("vehicleInfo") or {}).get("spu")
+                    or c.get("modelName") or "") == (spu or model_name)
+            ) > 1
     except Exception as err:  # noqa: BLE001
         _LOGGER.debug("读车辆名失败（将回退）: %s", err)
 
@@ -180,6 +186,8 @@ def vehicle_names(li_api: Any, ability: Any = None,
         "model": model or zh or "理想汽车",
         "spu": spu,
         "plate": plate,
+        "nickname": nickname,
+        "same_model": same_model,
     }
 
 
@@ -202,11 +210,33 @@ def build_device_info(coordinator: Any, entry: Any, li_api: Any,
     # ★ 优先用 coordinator.data 里缓存的名字（__init__ 已在 executor 里取好）
     cached = cached_vehicle_name(coordinator)
     names = vehicle_names(li_api, ability, cached=cached, vin=vin)
-    # ★ 名字策略（与 App 一致）：
-    #   name  = 服务端昵称（vehicleNickname / spu）
-    #   model = 车型（modelName）
-    #   ★ 不再硬编码 "Li Auto L6"
+
+    # ★★ 2026-09-26（用户纠正）：device 名才是【车辆标识】
+    #     HA 层级：config_entry（账号）→ device（车辆）→ entity
+    #     · title  = 账号级（"Li Auto (1820)"）
+    #     · device = 车辆级（本函数负责）← ★ 一个账号可挂多辆车
+    #
+    #     命名规则（模拟 App 的「我的车辆」列表）：
+    #       ① 用户起过昵称      → 用昵称（最自然）
+    #       ② 车型唯一（不同款）→ 用车型（"理想L6 Pro"）
+    #       ③ 同款多辆（重名）  → 车型 + 车牌（"理想L6 Pro 浙CFS3517"）
+    #       ④ 无车牌且重名      → 车型 + VIN 后 4 位
     display = names["zh"]
+    # ★ 判断「用户是否真的改过昵称」：
+    #   默认昵称 == modelName（如「理想L6」），此时不算自定义
+    #   用户改过（如「大黑」）→ 与 modelName 不同 → 用它
+    _nick = names.get("nickname") or ""
+    _is_custom_nick = bool(_nick) and _nick not in (
+        names.get("model") or "", names.get("zh") or "")
+    if _is_custom_nick:
+        # ① 用户起过自定义昵称 → 直接用（最自然）
+        display = _nick
+    elif names.get("same_model"):
+        # ③ 同款多辆 → 必须加区分符
+        if names.get("plate"):
+            display = f"{names['zh']} {names['plate']}"
+        elif vin:
+            display = f"{names['zh']} {vin[-4:]}"
 
     identifiers = {(DOMAIN, vin)} if vin else {(DOMAIN, entry.entry_id)}
     dev = DeviceInfo(

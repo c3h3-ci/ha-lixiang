@@ -242,84 +242,108 @@ class TestMultiVehicleAccount:
         assert n["plate"] == "沪C00003"
 
 
-class TestEntryTitle:
-    """config entry 的 title 生成逻辑（用户确认的设计）。
+class TestEntryTitleIsAccountLevel:
+    """★ config entry 的 title = 【账号级】标识（用户纠正）。
 
-    层级：账号（手机号）→ 车辆（VIN）→ 车牌
-
-    规则：
-        ① 一个账号 + 一辆车 → "Li Auto (1820)"
-        ② 一个账号 + 多辆车 → "Li Auto (1820) 浙CFS3517"  ★ 加车牌
-        ③ 多账号           → 手机尾号天然区分
+    HA 层级：config_entry（账号）→ device（车辆）→ entity
+    · title  = "Li Auto (1820)"      ← 账号，不混入车辆信息
+    · device = "理想L6 Pro"           ← 车辆，见 DeviceNameForVehicle
     """
 
     @staticmethod
     def _src() -> str:
         return (_INTEG / "config_flow.py").read_text(encoding="utf-8")
 
+    def test_title_is_phone_suffix_only(self):
+        s = self._src()
+        i = s.find("def _entry_title")
+        assert i > 0, "缺 _entry_title"
+        blk = s[i:i + 1500]
+        assert 'f"Li Auto ({suffix})"' in blk, "title 应为账号（手机尾号）"
+        # ★ 不该含车型/车牌
+        assert "plateNumber" not in blk, "title 不该混入车牌"
+        assert "spu" not in blk, "title 不该混入车型"
+
+    def test_title_fallback_without_phone(self):
+        s = self._src()
+        i = s.find("def _entry_title")
+        blk = s[i:i + 1500]
+        assert '"Li Auto"' in blk
+
+
+class TestDeviceNameForVehicle:
+    """★ device 名 = 【车辆级】标识（用户纠正的真正需求）。
+
+    HA 层级：config_entry（账号）→ device（车辆）→ entity
+    命名规则：
+        ① 用户自定义昵称    → "大黑"
+        ② 车型唯一（不同款）→ "理想L6 Pro"
+        ③ 同款多辆          → "理想L6 Pro 浙CFS3517"（加车牌）
+        ④ 同款无车牌        → "理想L6 Pro 1234"（加 VIN 后 4 位）
+    """
+
     @staticmethod
-    def _title(n_vehicles: int, plate: str = "", vin_match: bool = True,
-               suffix: str = "1820") -> str:
-        """复刻 _entry_title 的逻辑（纯函数，便于穷举）。"""
-        base = f"Li Auto ({suffix})" if suffix else "Li Auto"
-        if n_vehicles <= 1:
-            return base
-        if not vin_match:
-            return base
-        return f"{base} {plate}" if plate else base
+    def _mk(vin, model, spu, plate, nick=""):
+        return {"vin": vin, "modelName": model,
+                "vehicleInfo": {"spu": spu, "plateNumber": plate,
+                                "vehicleNickname": nick or model}}
 
-    def test_helper_exists(self):
-        s = self._src()
-        assert "def _entry_title" in s
+    class _Api:
+        def __init__(self, vehs):
+            self._v = vehs
 
-    def test_matches_by_vin(self):
-        """★ 必须按 VIN 匹配（不盲取第一辆）。"""
-        s = self._src()
-        i = s.find("def _entry_title")
-        blk = s[i:i + 3000]
-        assert 'get("vin")' in blk
-        assert "for v in vehs" in blk
+        def get_vehicles(self):
+            return self._v
 
-    def test_uses_vehicle_count(self):
-        """★ 必须按车辆数决定是否加车牌。"""
-        s = self._src()
-        i = s.find("def _entry_title")
-        blk = s[i:i + 3000]
-        assert "len(vehs) == 1" in blk, "未按车辆数判断"
+    class _Entry:
+        entry_id = "e1"
 
-    def test_single_vehicle_no_plate(self):
-        """单辆车 → 简洁（不加车牌）。"""
-        assert self._title(1, "浙CFS3517") == "Li Auto (1820)"
+        def __init__(self, vin):
+            self.data = {"vin": vin}
 
-    def test_multi_vehicle_adds_plate(self):
-        """★ 多辆车 → 加车牌区分。"""
-        a = self._title(2, "浙CFS3517")
-        b = self._title(2, "京A12345")
-        assert a == "Li Auto (1820) 浙CFS3517"
-        assert b == "Li Auto (1820) 京A12345"
-        assert a != b, "多车 title 必须互不相同"
+    def _name(self, vehs, vin):
+        di = dev.build_device_info(None, self._Entry(vin), self._Api(vehs))
+        return di["name"]
 
-    def test_multi_vehicle_no_plate_falls_back(self):
-        assert self._title(2, "") == "Li Auto (1820)"
+    def test_single_vehicle_short_name(self):
+        v = [self._mk("V1", "理想L6", "理想L6 Pro", "浙A00001")]
+        assert self._name(v, "V1") == "理想L6 Pro"
 
-    def test_vin_mismatch_falls_back(self):
-        """VIN 不匹配 → 不加车牌（避免标错车）。"""
-        assert self._title(2, "浙CFS3517", vin_match=False) == "Li Auto (1820)"
+    def test_multi_different_models(self):
+        v = [self._mk("V1", "理想L6", "理想L6 Pro", "浙A00001"),
+             self._mk("V2", "理想L9", "理想L9 Max", "京B00002")]
+        assert {self._name(v, "V1"), self._name(v, "V2")} == {
+            "理想L6 Pro", "理想L9 Max"}
 
-    def test_multi_account_distinguished_by_suffix(self):
-        """多账号 → 手机尾号区分。"""
-        a = self._title(1, suffix="1820")
-        b = self._title(1, suffix="1902")
+    def test_multi_same_model_adds_plate(self):
+        """★ 两辆同款 → 必须加车牌区分（用户指出的场景）。"""
+        v = [self._mk("V1", "理想L6", "理想L6 Pro", "浙A00001"),
+             self._mk("V2", "理想L6", "理想L6 Pro", "京B00002")]
+        a, b = self._name(v, "V1"), self._name(v, "V2")
+        assert a == "理想L6 Pro 浙A00001"
+        assert b == "理想L6 Pro 京B00002"
         assert a != b
 
-    def test_multi_account_multi_vehicle(self):
-        """多账号 + 各自多车 → 尾号 + 车牌双重区分。"""
-        titles = {
-            self._title(2, "浙CFS3517", suffix="1820"),
-            self._title(2, "京A12345", suffix="1820"),
-            self._title(2, "沪B67890", suffix="1902"),
-        }
-        assert len(titles) == 3, f"title 有重复: {titles}"
+    def test_multi_same_model_no_plate_uses_vin(self):
+        v = [self._mk("VINAAAAAAAAA1234", "理想L6", "理想L6 Pro", ""),
+             self._mk("VINBBBBBBBBB5678", "理想L6", "理想L6 Pro", "")]
+        a, b = self._name(v, "V1" if False else "VINAAAAAAAAA1234"), \
+               self._name(v, "VINBBBBBBBBB5678")
+        assert a != b, "同款无车牌时应用 VIN 尾号区分"
 
-    def test_no_vehicles(self):
-        assert self._title(0) == "Li Auto (1820)"
+    def test_custom_nickname_wins(self):
+        """用户自定义昵称 → 优先（最自然）。"""
+        v = [self._mk("V1", "理想L6", "理想L6 Pro", "浙A00001", "大黑"),
+             self._mk("V2", "理想L6", "理想L6 Pro", "京B00002", "小白")]
+        assert self._name(v, "V1") == "大黑"
+        assert self._name(v, "V2") == "小白"
+
+    def test_default_nickname_not_treated_as_custom(self):
+        """默认昵称（==车型名）不算自定义，应用 spu。"""
+        v = [self._mk("V1", "理想L6", "理想L6 Pro", "浙A00001", "理想L6")]
+        assert self._name(v, "V1") == "理想L6 Pro"
+
+    def test_matches_by_vin(self):
+        v = [self._mk("V1", "理想L6", "理想L6 Pro", "浙A00001"),
+             self._mk("V2", "理想L9", "理想L9 Max", "京B00002")]
+        assert "L9" in self._name(v, "V2"), "第二辆被串成了第一辆"

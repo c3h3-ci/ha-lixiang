@@ -653,62 +653,20 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     def _entry_title(self, data: dict[str, Any]) -> str:
-        """生成 config entry 的 title。
+        """生成 config entry 的 title —— ★ 就是【账号】标识。
 
-        ★ 2026-09-26 设计（用户确认）：
-          层级：账号（手机号）→ 车辆（VIN）→ 车牌
+        ★ 2026-09-26（用户纠正）：
+          HA 的层级是 config_entry（账号）→ device（车辆）→ entity。
+          · title = 账号级标识，【不该】混入车辆信息
+            （一个账号可挂多辆车，title 装不下也不该装）
+          · 车辆区分靠 **device 名**（见 device.py 的 build_device_info）
 
-        规则：
-            ① 一个账号 + 一辆车   → "Li Auto (1820)"
-            ② 一个账号 + 多辆车   → "Li Auto (1820) 浙CFS3517"  ★ 加车牌区分
-            ③ 多账号            → 手机尾号天然区分
-
-        ★ 关键：按【该账号下的车辆数】决定是否加车牌 ——
-          单车不加（简洁），多车必加（否则重名）。
-        ★ 按 VIN 精确匹配本 entry 对应的车（不盲取第一辆）。
+        规则：title = "Li Auto (手机尾号)"
+              取不到手机号 → "Li Auto"
         """
-        from .li_api import LiApiClient
-
         phone = data.get(CONF_PHONE) or ""
-        vin = (data.get(CONF_VIN) or "").strip().upper()
-        suffix = phone[-4:]
-        base = f"Li Auto ({suffix})" if suffix else "Li Auto"
-
-        try:
-            api = LiApiClient(
-                phone=phone,
-                password=data.get(CONF_PASSWORD) or "",
-                vin=vin,
-                hac_key=data.get(CONF_HAC_KEY) or DEFAULT_HAC_KEY,
-                key_id=data.get(CONF_KEY_ID) or DEFAULT_KEY_ID,
-                xdev=data.get(CONF_XDEV) or DEFAULT_XDEV,
-                app_token=data.get(CONF_APP_TOKEN) or DEFAULT_APP_TOKEN,
-                device_id=data.get(CONF_DEVICE_ID) or DEFAULT_DEVICE_ID,
-            )
-            vehs = api.get_vehicles() or []
-            if not vehs:
-                return base
-
-            # ① 单车账号 → 不用车牌
-            if len(vehs) == 1:
-                return base
-
-            # ② 多车账号 → 按 VIN 找到本 entry 的车，取车牌
-            target = None
-            for v in vehs:
-                if (v.get("vin") or "").upper() == vin:
-                    target = v
-                    break
-            if target is None:
-                return base              # VIN 不匹配 → 兜底（不盲取）
-
-            plate = ((target.get("vehicleInfo") or {}).get("plateNumber")
-                     or "").strip()
-            return f"{base} {plate}" if plate else base
-
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("生成 title 失败（用账号兜底）: %s", err)
-            return base
+        suffix = phone[-4:] if len(phone) >= 4 else ""
+        return f"Li Auto ({suffix})" if suffix else "Li Auto"
 
     def _resolve_vin(self, data: dict[str, Any]) -> str:
         """用 li_api.get_vehicles() 拉取账号名下的车辆，返回第一辆的 VIN。

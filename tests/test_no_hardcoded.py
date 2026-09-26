@@ -84,14 +84,22 @@ class TestDeviceNameIsDynamic:
         s = (_INTEG / f"{name}.py").read_text(encoding="utf-8")
         assert "build_device_info(" in s, f"{name}.py 未用统一设备构造"
 
-    def test_config_flow_title_uses_entry_title(self):
-        """config entry 的 title 应用 _entry_title（车型+车牌，多车可区分）。"""
+    def test_config_flow_title_is_account_level(self):
+        """★ config entry 的 title = 账号级（用户纠正）。
+
+        HA 层级：config_entry（账号）→ device（车辆）→ entity
+        · title  = "Li Auto (1820)"   账号，不混入车辆信息
+        · device = "理想L6 Pro"        车辆（见 device.py）
+
+        ⚠️ 曾错误地把 title 改成「车型+车牌」——
+           但一个账号可挂多辆车，title 装不下也不该装。
+        """
         s = (_INTEG / "config_flow.py").read_text(encoding="utf-8")
         assert "_entry_title" in s
-        # ★ 且必须按 VIN 匹配（用户指出：多车账号不能盲取第一辆）
         i = s.find("def _entry_title")
-        blk = s[i:i + 3000]
-        assert 'get("vin")' in blk, "未按 VIN 匹配车辆"
+        blk = s[i:i + 1500]
+        assert 'f"Li Auto ({suffix})"' in blk
+        assert "plateNumber" not in blk, "title 不该混入车牌"
 
 
 class TestNoSecrets:
