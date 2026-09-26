@@ -19,21 +19,3 @@ refresh:
       required: false
       selector:
         text:
-
-open_windows:
-  name: 物理开窗
-  description: 按车辆语义开窗（与 HA cover「打开」反向 UI 无关，供巴法/自动化使用）。
-  fields:
-    percent:
-      name: 开度百分比
-      description: 0-100，默认 99（接近全开）。
-      required: false
-      default: 99
-      selector:
-        number:
-          min: 1
-          max: 100
-
-close_windows:
-  name: 物理关窗
-  description: 按车辆语义关窗（与 HA cover「关闭」反向 UI 无关）。

@@ -46,10 +46,10 @@ from typing import Any
 #   · HA 运行时：相对导入（包内）
 #   · pytest：绝对导入（conftest 已把集成目录加入 sys.path）
 try:
-    from .signals import path_of
+    from .const import VSS_PATHS
     from .translations import translate
 except ImportError:  # pragma: no cover - 单测路径
-    from signals import path_of  # type: ignore[no-redef]
+    from const import VSS_PATHS  # type: ignore[no-redef]
     from translations import translate  # type: ignore[no-redef]
 
 # 与 sensor.py 保持一致
@@ -200,6 +200,25 @@ def render_value(
         except (ValueError, TypeError):
             return val
 
+    # ---- ★ 2026-09-24 保养二级（maint_engine_level2）----
+    #   ⚠️ 必须放在 maint_ 前缀判断【之前】——
+    #      它的字段结构不同（无 maintainLeftMileage 之外的常见字段组合），
+    #      用通用逻辑会误返回"正常"。
+    if key == "maint_engine_level2":
+        try:
+            o = json.loads(val) if isinstance(val, str) else val
+            name = o.get("name") or "保养"
+            left = o.get("maintainLeftMileage")
+            due = str(o.get("maintainDueDate") or "")
+            parts = [str(name)]
+            if isinstance(left, (int, float)):
+                parts.append(f"剩余 {left:.0f} km")
+            if len(due) == 8 and due.isdigit():
+                parts.append(f"{due[:4]}-{due[4:6]}-{due[6:]} 到期")
+            return " · ".join(parts) if len(parts) > 1 else str(name)
+        except (ValueError, TypeError, AttributeError):
+            return "未知"
+
     # ---- 保养类: 提取关键字段 ----
     if key.startswith("maint_"):
         try:
@@ -224,7 +243,7 @@ def render_value(
             return STATE_UNKNOWN
     # ★ 统一翻译：0/1 等裸数字 → 中文（translations.py）
     #   App 里没有数字→文案映射表，我们用实测表翻译（见 translations.py 说明）
-    _path = path_of(key)
+    _path = VSS_PATHS.get(key, "")
     if _path:
         _tr = translate(_path, val)
         if _tr != val:
@@ -252,6 +271,82 @@ def render_value(
         return str(val)[:5] if val else STATE_UNKNOWN
     if key == "scheduled_charge_end":
         return str(val)[:5] if val else STATE_UNKNOWN
+
+    # ---- ★ 2026-09-24 新增：复杂 JSON 信号 → 可读值 ----
+    #   用户反馈："离车模式好像有问题"（显示一坨 JSON）
+    if key == "xmode":
+        # 离车模式：{mainSwitch, moveOffDatas:{id:{acSwitch,startTime,temp,...}}}
+        try:
+            o = json.loads(val) if isinstance(val, str) else val
+            on = bool(o.get("mainSwitch"))
+            items = list((o.get("moveOffDatas") or {}).values())
+            if not on:
+                return "已关闭"
+            if not items:
+                return "已开启"
+            d = items[0]
+            parts = []
+            if d.get("startTime"):
+                parts.append(str(d["startTime"])[:5])
+            if d.get("acSwitch"):
+                t = d.get("temp")
+                parts.append(f"空调{int(t)}°C" if isinstance(t, (int, float)) else "空调")
+            if d.get("dayDesc"):
+                parts.append(str(d["dayDesc"]))
+            more = f" +{len(items)-1}" if len(items) > 1 else ""
+            return ("已开启 · " + " ".join(parts) + more) if parts else "已开启"
+        except (ValueError, TypeError, AttributeError):
+            return STATE_UNKNOWN
+
+    if key == "fridge_reserve":
+        # 冰箱预约：{reserveSwitch, startTime, temp, workMode, dayDesc}
+        try:
+            o = json.loads(val) if isinstance(val, str) else val
+            if not bool(o.get("reserveSwitch")):
+                return "已关闭"
+            parts = []
+            if o.get("startTime"):
+                parts.append(str(o["startTime"])[:5])
+            t = o.get("temp")
+            if isinstance(t, (int, float)) and t:
+                parts.append(f"{int(t)}°C")
+            if o.get("dayDesc"):
+                parts.append(str(o["dayDesc"]))
+            return ("已开启 · " + " ".join(parts)) if parts else "已开启"
+        except (ValueError, TypeError, AttributeError):
+            return STATE_UNKNOWN
+
+    if key == "charge_calibration":
+        # 充电校准：{id, ...} —— 只显示是否启用
+        try:
+            o = json.loads(val) if isinstance(val, str) else val
+            return "已启用" if o else STATE_UNKNOWN
+        except (ValueError, TypeError, AttributeError):
+            return STATE_UNKNOWN
+
+    if key == "vehicle_accounts":
+        # 车辆账号：{accountId: {role: ...}} → 显示账号数
+        try:
+            o = json.loads(val) if isinstance(val, str) else val
+            return f"{len(o)} 个账号"
+        except (ValueError, TypeError, AttributeError):
+            return STATE_UNKNOWN
+
+    if key == "provision_finish":
+        # 激活成功信息：{accountId, ...} → 已激活
+        try:
+            o = json.loads(val) if isinstance(val, str) else val
+            return "已激活" if o else STATE_UNKNOWN
+        except (ValueError, TypeError, AttributeError):
+            return STATE_UNKNOWN
+
+    if key == "rear_load_mode":
+        # 后负载模式：{id, ...}
+        try:
+            o = json.loads(val) if isinstance(val, str) else val
+            return o.get("name") or o.get("mode") or ("已设置" if o else STATE_UNKNOWN)
+        except (ValueError, TypeError, AttributeError):
+            return STATE_UNKNOWN
 
     # ---- 通用: 长 JSON 截断, 其余直返 ----
     if isinstance(val, (dict, list)):

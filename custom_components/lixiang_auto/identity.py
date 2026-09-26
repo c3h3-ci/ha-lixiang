@@ -169,20 +169,6 @@ class IdentityStore:
         self.set_device_id(phone, did, save=False)
         return did
 
-    def get_last_base_url(self) -> str | None:
-        """上次用户确认可用的 HA 访问地址（避免默认又变成 127.0.0.1）。"""
-        v = self._data.get("last_base_url")
-        return str(v) if v else None
-
-    def set_last_base_url(self, url: str, *, save: bool = True) -> None:
-        """记录用户实际可用的 HA 访问地址。"""
-        url = str(url or "").strip().rstrip("/")
-        if not url:
-            return
-        self._data["last_base_url"] = url
-        if save:
-            self._save()
-
     @property
     def known_accounts(self) -> int:
         return len(self._data.get("accounts") or {})

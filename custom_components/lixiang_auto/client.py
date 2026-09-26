@@ -11,7 +11,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import uuid
@@ -25,8 +24,6 @@ from .const import (
     DEFAULT_ACCEPT,
     DEVICE_MODEL,
     DEVICE_TYPE,
-    EMPTY_MD5,
-    ENV,
     EP_VEHICLE_BASICS,
     EP_VEHICLES,
     MODEL_NAME,

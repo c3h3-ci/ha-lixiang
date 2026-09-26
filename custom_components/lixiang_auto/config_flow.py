@@ -13,7 +13,6 @@ import voluptuous as vol
 from homeassistant.helpers import selector
 
 from homeassistant import config_entries
-from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 
 from .auth import LiAuthError
@@ -166,16 +165,7 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """入口: 直接显示手机号 + 密码登录表单（不做菜单）。"""
-        await self._ensure_login_views()
         return await self.async_step_password_login(user_input)
-
-    async def _ensure_login_views(self) -> None:
-        """确保 /lixiang-login 视图已注册（首次添加集成时 async_setup 尚未执行）。"""
-        try:
-            from .auth_web import async_register_login_views
-            await async_register_login_views(self.hass)
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.warning("注册登录辅助页面失败: %s", err)
 
     async def async_step_password_login(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """手机号 + 密码登录（自动使用已保存的受信任 device_id）。
@@ -191,7 +181,6 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         ★ 重要提示：脚本登录会踢掉理想 App 的会话（PAKE 单会话限制）。
         """
-        await self._ensure_login_views()
         errors: dict[str, str] = {}
         if user_input is not None:
             phone = normalize_phone(user_input[CONF_PHONE])
@@ -202,21 +191,41 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # ① 取 device_id（优先级从高到低）
             #    a. 用户手填（高级选项）
             #    b. identity store 里该账号的（上次登录成功保存的）
-            #    c. ★ 本地新生成（uuid）—— DEFAULT_DEVICE_ID 已刻意留空，
-            #       空 device_id 会让理想官方登录页一直转圈，绝不能传空串
+            #    c. ★ 打包进集成的已知受信任设备（DEFAULT_DEVICE_ID）
+            #       —— 这是本机之前用它成功登录过的设备号，
+            #          服务端已标记受信任，可免短信。
+            #    d. 都没有 → 随机新设备（会触发短信验证）
             store = await get_store_async(self.hass)
             saved = store.get_device_id(phone)
-            device_id = (user_input.get(CONF_DEVICE_ID) or "").strip() or saved or ""
+            device_id = (user_input.get(CONF_DEVICE_ID)
+                         or saved
+                         or DEFAULT_DEVICE_ID)
+
+            # ★ 2026-09-24 修复（用户反馈"设备 ID 是空的"）：
+            #   上面三者都为空时必须【生成】一个随机 device_id，
+            #   否则 device_id = "" 会：
+            #     · 理想登录 URL 里 device_id= 空 → 页面可能转圈
+            #     · 登录后信任的是浏览器随机 id，不是 HA 的
+            #     · HA 永远登不上 → "提交不上去"
             if not device_id:
                 import uuid as _uuid
                 device_id = _uuid.uuid4().hex
+                _LOGGER.info("未找到已保存的 device_id，生成新的: %s",
+                             device_id[:12])
+
+            trusted = bool(saved or (device_id == DEFAULT_DEVICE_ID))
+
+            # ★ 立即持久化（供后续步骤 & 下次登录复用）
+            try:
                 store.set_device_id(phone, device_id, save=False)
-            # 仅「曾经登录成功保存过」才算受信任；新生成的不算
-            trusted = bool(saved)
+                if hasattr(store, "save"):
+                    store.save()
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("保存 device_id 失败: %s", err)
             _LOGGER.debug("登录使用 device_id=%s (受信任=%s)",
                           str(device_id)[:12], trusted)
 
-            # 暂存，供 SMS / browser 步骤使用（device_id 必须非空）
+            # 暂存，供 SMS 步骤使用
             self._pending = {
                 "phone": phone,
                 "password": password,
@@ -270,50 +279,65 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     #         用户在页面里完成登录后，该 device_id 被服务端标记受信任，
     #         HA 后台轮询检测到信任 → 后续免 MFA。
     # ---------------------------------------------------------------
+    async def _ensure_login_views(self) -> None:
+        """确保 /lixiang-login 视图已注册。
+
+        ★ 2026-09-24（整合 shinnaluo 的 PR）：
+          config_flow 在【还没有 config entry】时运行，
+          此时 HA 不会调用 __init__.async_setup → 视图未注册 → 404。
+          这个兜底在浏览器登录步骤前确保视图就绪。
+        """
+        try:
+            from .auth_web import async_register_login_views
+            await async_register_login_views(self.hass)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("注册登录辅助页面失败: %s", err)
+
     async def async_step_browser(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """浏览器辅助登录：用户在自己浏览器里过滑动验证。
 
         流程：
-          ① 注册 /lixiang-login 视图（首次配置时 async_setup 可能还没跑）
+          ① 确保 /lixiang-login 视图已注册
           ② 生成本地会话（token）→ 得到辅助页面 URL
           ③ 用户在页面里完成登录（滑 + 短信）
           ④ HA 后台轮询用 device_id+密码 试登录
           ⑤ 成功 → 继续建条目（保存 phone+password+device_id）
         """
-        from .auth_web import create_session, get_session, try_login
-
-        # ★ 关键：纯 config_flow 集成在【还没有 config entry】时，
-        #   HA 不会调用 __init__.async_setup → 视图未注册 → /lixiang-login 404。
+        # ★ 关键：确保视图已注册（首次配置时 async_setup 可能还没跑）
         await self._ensure_login_views()
+        from .auth_web import create_session, get_session, try_login
 
         pending = getattr(self, "_pending", None) or {}
         phone = pending.get("phone") or ""
         password = pending.get("password") or ""
-        device_id = (pending.get("device_id") or "").strip()
+        device_id = pending.get("device_id") or DEFAULT_DEVICE_ID
+
+        # ★ 2026-09-24 修复：device_id 为空时必须生成并【持久化】，
+        #   否则 try_login("") 会让 pake_login 自己生成随机的
+        #   → 与理想页面登录用的 device_id 不一致 → 永远检测不到信任。
         if not device_id:
-            # ★ 兜底：绝不能把空 device_id 传给理想登录页（会一直 loading）
             store = await get_store_async(self.hass)
-            device_id = (store.get_device_id(phone) if phone else None) or ""
+            device_id = store.get_device_id(phone) or ""
             if not device_id:
                 import uuid as _uuid
                 device_id = _uuid.uuid4().hex
-                if phone:
-                    store.set_device_id(phone, device_id, save=False)
-            if pending:
-                pending["device_id"] = device_id
-                self._pending = pending
-            _LOGGER.warning("browser 步骤缺失 device_id，已生成: %s", device_id[:12])
+                _LOGGER.info("browser 步骤生成 device_id: %s", device_id[:12])
+            if phone:
+                try:
+                    store.set_device_id(phone, device_id, save=True)
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.debug("保存 device_id 失败: %s", err)
+            # 回写 pending（后续步骤要用同一个）
+            pending["device_id"] = device_id
+            self._pending = pending
+
+        _LOGGER.info(
+            "浏览器登录步骤: device_id=%s  phone=%s****%s",
+            device_id[:12], phone[:3], phone[-4:] if len(phone) >= 4 else "")
 
         # ★ 用户填的 HA 访问地址（用于生成辅助页面 URL）
         if user_input and user_input.get("ha_base_url"):
             self._user_base_url = str(user_input["ha_base_url"]).strip().rstrip("/")
-            # 记住用户实际可用的地址，下次默认用它（避免又回到 127.0.0.1）
-            try:
-                store = await get_store_async(self.hass)
-                store.set_last_base_url(self._user_base_url, save=False)
-                await store.save_async(self.hass)
-            except Exception as err:  # noqa: BLE001
-                _LOGGER.debug("保存 HA 访问地址失败（忽略）: %s", err)
 
         # ① 建会话（每次进入本步骤新建，避免复用过期 token）
         tok = getattr(self, "_login_token", None)
@@ -322,12 +346,38 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._login_token = tok
 
         # ② 后台检测：用 device_id + 密码 试登录
-        try:
-            ok = await self.hass.async_add_executor_job(
-                try_login, phone, password, device_id)
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("检测登录异常: %s", err)
-            ok = False
+        #    ★ 2026-09-24 体验优化：
+        #      理想服务器同步"设备已受信任"需要几十秒。
+        #      原来只检测一次 → 用户必须自己等 30 秒再点提交。
+        #      现在改为【自动重试】：最多等 ~40 秒，每 5 秒试一次，
+        #      用户点一次提交即可。
+        import asyncio as _asyncio
+
+        _RETRY_TOTAL = 8      # 最多 8 次
+        _RETRY_GAP = 5        # 间隔 5 秒 → 共 ~40 秒
+
+        ok = False
+        for _i in range(_RETRY_TOTAL):
+            try:
+                ok = await self.hass.async_add_executor_job(
+                    try_login, phone, password, device_id)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("检测登录异常: %s", err)
+                ok = False
+
+            if ok:
+                break
+
+            if _i < _RETRY_TOTAL - 1:
+                _LOGGER.info(
+                    "设备尚未受信任，%d 秒后重试（第 %d/%d 次）",
+                    _RETRY_GAP, _i + 1, _RETRY_TOTAL)
+                await _asyncio.sleep(_RETRY_GAP)
+
+        if not ok:
+            _LOGGER.info(
+                "等待 %d 秒后仍未检测到受信任（device_id=%s）",
+                _RETRY_TOTAL * _RETRY_GAP, device_id[:12])
 
         if ok:
             # ★ 设备已受信任 → 完成登录
@@ -349,13 +399,12 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # ③ 还没受信任 → 显示辅助页面 + 让用户确认后重新检测
         #    ★ 用户可填自己的 HA 访问地址（内网/外网不同）
-        default_base = self._base_url()
-        cur_base = getattr(self, "_user_base_url", None) or default_base
-        self._user_base_url = cur_base
+        # ★ 2026-09-24 简化（用户要求）：
+        #   去掉「HA 访问地址」输入框 —— 它只用于生成辅助页链接，
+        #   而现在直接给理想登录链接，该字段已无用途。
         return self.async_show_form(
             step_id="browser",
             data_schema=vol.Schema({
-                vol.Optional("ha_base_url", default=cur_base): str,
                 vol.Optional("recheck", default=True): bool,
             }),
             description_placeholders=self._browser_ph(tok, device_id),
@@ -377,75 +426,128 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return None
 
     def _base_url(self) -> str:
-        """推断 HA 的对外访问地址（优先级从高到低）。
+        """推断 HA 的访问地址。
 
-        ① 本次流程用户已填的地址
-        ② 上次成功用过的地址（identity store）
-        ③ HA 配置的 external_url / internal_url
-        ④ hass.config.api.base_url（非回环）
-        ⑤ 兜底：127.0.0.1:8123（仅浏览器与 HA 同机时可用）
+        ★ 2026-09-24 改进（用户反馈"在外面登不了"）：
+          改用 HA 官方的 helpers.network.get_url()，
+          它会考虑用户配置的 external_url / internal_url
+          以及 HA Cloud，而不是死板地只取其中一个。
         """
-        # ① 本会话用户输入
-        user = getattr(self, "_user_base_url", None)
-        if user:
-            return str(user).rstrip("/")
-
-        # ② 历史可用地址
         try:
-            from .identity import get_store
-            last = get_store().get_last_base_url()
-            if last:
-                return last.rstrip("/")
-        except Exception:  # noqa: BLE001
-            pass
+            from homeassistant.helpers.network import get_url
+            # ★ 2026-09-24 修正：不再硬编码 prefer_external=True
+            #   用户可能从【内网】访问，硬给外网地址会不匹配。
+            #   交给 HA 按 api.use_ssl 等条件自行判断。
+            url = get_url(self.hass, allow_ip=True)
+            if url:
+                return str(url).rstrip("/")
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("get_url 失败: %s", err)
 
-        # ③ HA 配置
-        try:
-            for key in ("external_url", "internal_url"):
-                u = getattr(self.hass.config, key, None)
-                if u:
-                    return str(u).rstrip("/")
-        except Exception:  # noqa: BLE001
-            pass
+        for u in (
+            getattr(self.hass.config, "external_url", None),
+            getattr(self.hass.config, "internal_url", None),
+        ):
+            if u:
+                return str(u).rstrip("/")
 
-        # ④ hass.config.api.base_url（跳过回环地址）
-        try:
-            api = getattr(self.hass.config, "api", None)
-            if api is not None:
-                bu = getattr(api, "base_url", None)
-                if bu and not str(bu).startswith(("http://127.", "http://localhost")):
-                    return str(bu).rstrip("/")
-        except Exception:  # noqa: BLE001
-            pass
-
-        # ⑤ 兜底
         return "http://127.0.0.1:8123"
 
+    def _all_base_urls(self) -> list[str]:
+        """所有可能的 HA 访问地址（给用户多个备选）。
+
+        ★ 用户可能在内外网切换，多给几个地址更实用。
+        """
+        urls: list[str] = []
+        seen: set[str] = set()
+
+        def add(u) -> None:
+            if not u:
+                return
+            v = str(u).rstrip("/")
+            if v and v not in seen:
+                seen.add(v)
+                urls.append(v)
+
+        try:
+            from homeassistant.helpers.network import get_url
+
+            # ① 外网优先（用户在车里时用这个）
+            try:
+                add(get_url(self.hass, prefer_external=True, allow_ip=True))
+            except Exception:  # noqa: BLE001
+                pass
+            # ② 内网
+            try:
+                add(get_url(self.hass, prefer_external=False, allow_ip=True))
+            except Exception:  # noqa: BLE001
+                pass
+        except Exception:  # noqa: BLE001
+            pass
+
+        # ③ HA 配置值兜底
+        add(getattr(self.hass.config, "internal_url", None))
+        add(getattr(self.hass.config, "external_url", None))
+        return urls
+
     def _browser_ph(self, tok: str, device_id: str) -> dict[str, str]:
-        """辅助页面的说明文案（含 URL + 多个备选地址）。"""
-        base = getattr(self, "_user_base_url", None) or self._base_url()
-        # path 单独给出：用户可拼到自己正在用的 HA 域名后面
-        path = f"/lixiang-login?token={tok}"
-        url = f"{base}{path}"
-        # 本地/回环地址提示（127.0.0.1 在非同机场景必然打不开）
-        alt = ""
-        if any(x in base for x in ("127.0.0.1", "localhost")):
-            alt = (
-                "⚠️ **当前链接是 `127.0.0.1`，从别的设备打开会「拒绝连接」。**\n\n"
-                "请把下面「HA 访问地址」改成你浏览器地址栏里的地址，"
-                "例如 `http://192.168.1.209:8123`，然后点【提交】重新生成链接。\n\n"
-                f"也可手动拼接：`http://<你的HA地址>{path}`"
-            )
-        elif any(x in base for x in ("192.168.", "10.", "172.")):
-            alt = "（如果你从外网访问 HA，请把「HA 访问地址」改成你的外网地址）"
+        """生成登录步骤的说明文案与链接。
+
+        ★ 2026-09-24 方案 B（用户选择）：HA 弹窗【直接给完整登录链接】
+
+          为什么可以不用辅助页：
+            · 辅助页的唯二作用是「传 device_id」+「轮询状态提示」
+            · device_id 可以直接拼进 URL
+            · 状态提示用文案代替（"登录成功后回这里点提交"）
+
+          好处：
+            · 没有 iframe → 滑块 100% 可用（无嵌入风险）
+            · 少一次跳转，故障点更少
+
+          链接参数（来自 auth_web 的实测值）：
+            mode=h5 必须带（否则页面空白）
+            scope/audience 用登录实测值
+        """
+        from urllib.parse import urlencode
+
+        from .const import ACCOUNT_BASE, AUDIENCE, CLIENT_ID
+
+        # ① 理想官方登录链接（含 device_id）
+        login_url = ACCOUNT_BASE + "/app-auth?" + urlencode({
+            "mode": "h5",
+            "client_id": CLIENT_ID,
+            "redirect_uri": f"{ACCOUNT_BASE}/app-auth",
+            "response_type": "code",
+            "scope": "iam:client:type:app openid",
+            "audience": AUDIENCE,
+            "device_id": device_id,
+        })
+        # 备用：不带 audience/scope（authorize 异常时用）
+        alt_login_url = ACCOUNT_BASE + "/app-auth?" + urlencode({
+            "mode": "h5",
+            "client_id": CLIENT_ID,
+            "redirect_uri": f"{ACCOUNT_BASE}/app-auth",
+            "response_type": "code",
+            "device_id": device_id,
+        })
+
+        # ★ 2026-09-24 简化（用户要求"备用这些都删掉，简洁点"）：
+        #   只保留理想登录链接；辅助页/备选地址/设备ID 不再显示。
+        #   （占位符仍全部提供，避免旧模板引用时报错）
         return {
-            "url": url,
-            "url_path": path,
-            "url_alt": alt,
-            "device": device_id[:16],
+            "login_url": login_url,
+            "login_url_alt": alt_login_url,
+            "token": tok,
+            "device": device_id[:16] if device_id else "",
+            "base_url": "",
+            "helper_url": "",
+            "helper_alt": "",
+            "url": "",
+            "url_abs": "",
+            "url_alt": "",
         }
 
-    # 兼容旧 step 名（避免旧的进行中流程报错）
+
     async def async_step_sms(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """旧入口 → 转发到浏览器辅助登录。"""
         return await self.async_step_browser(user_input)
@@ -723,7 +825,11 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class LiCarOptionsFlow(config_entries.OptionsFlow):
-    """集成选项：轮询间隔 + 车控开关 + 巴法云桥接。"""
+    """集成选项：轮询间隔（借鉴 huawei-auto-cloud 的可配置设计）。
+
+    华为: 默认 30s，最小 10s
+    我们: 默认 60s，最小 30s（避免服务端风控）
+    """
 
     async def async_step_init(self, user_input=None):
         if user_input is not None:
@@ -733,11 +839,9 @@ class LiCarOptionsFlow(config_entries.OptionsFlow):
             CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_SECONDS,
             MAX_SCAN_INTERVAL_SECONDS, MIN_SCAN_INTERVAL_SECONDS,
         )
-        from .bemfa import OPT_FIND, OPT_SWITCHES, OPT_TRUNK, OPT_UID, OPT_WIN
-
-        opts = self.config_entry.options
-        current = opts.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_SECONDS)
-        cur_ctrl = opts.get("enable_control", True)
+        current = self.config_entry.options.get(
+            CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_SECONDS)
+        cur_ctrl = self.config_entry.options.get("enable_control", True)
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
@@ -746,23 +850,5 @@ class LiCarOptionsFlow(config_entries.OptionsFlow):
                     vol.All(vol.Coerce(int),
                             vol.Range(min=MIN_SCAN_INTERVAL_SECONDS,
                                       max=MAX_SCAN_INTERVAL_SECONDS)),
-                # 巴法云：uid + 主题（后缀决定设备类型）
-                vol.Optional(OPT_UID, default=opts.get(OPT_UID, "")): str,
-                vol.Optional(OPT_WIN, default=opts.get(OPT_WIN, "")): str,
-                vol.Optional(OPT_TRUNK, default=opts.get(OPT_TRUNK, "")): str,
-                vol.Optional(OPT_FIND, default=opts.get(OPT_FIND, "")): str,
-                vol.Optional(OPT_SWITCHES, default=opts.get(OPT_SWITCHES, "")): str,
             }),
-            description_placeholders={
-                "bemfa_hint": (
-                    "巴法云不会自动发现 HA 实体。请先在巴法控制台创建主题：\n"
-                    "· 车窗/尾门 → 后缀 **009**（窗帘）\n"
-                    "· 寻车 → 后缀 **006**（开关）\n"
-                    "· **座椅加热/通风 → 后缀 003（风扇）**，支持语音「二档」"
-                    "（on#1 / on#2 / on#3）\n"
-                    "· 映射：`主题=suffix` 逗号分隔，"
-                    "如 `zjzr003=seat_fl_heat,fzjzr003=seat_fr_heat`\n"
-                    "uid = 控制台「用户私钥」。填好后保存并重载集成。"
-                ),
-            },
         )

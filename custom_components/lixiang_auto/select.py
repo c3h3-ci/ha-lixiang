@@ -20,6 +20,7 @@ import logging
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -68,6 +69,8 @@ class LiCarAcTypeSelect(CoordinatorEntity, SelectEntity):
     _attr_name = "空调控制类型"
     _attr_icon = "mdi:air-conditioner"
     _attr_options = list(AC_TYPE_OPTIONS.keys())
+    # 配置型 → 设备页归入「配置」区，与实体控制分开
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, coordinator, li_api, device_info, vin: str) -> None:
         super().__init__(coordinator)

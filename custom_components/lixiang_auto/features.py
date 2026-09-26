@@ -28,7 +28,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from .const import DOMAIN, LOGGER_NAME
+from .const import LOGGER_NAME
 
 _LOGGER = logging.getLogger(LOGGER_NAME)
 
@@ -67,12 +67,36 @@ _LOGGER = logging.getLogger(LOGGER_NAME)
 # App 的硬编码功能表（从 smali 提取）
 # key = 车型代号, value = {功能名: 是否支持}
 KNOWN_FEATURES: dict[str, dict[str, bool]] = {
-    "M01": {                      # L6（实测自 LXM01StateDelegate）
-        "牌显": True,
+    # ⚠️ 本表必须【覆盖 FEATURE_PROBES 的所有功能】！
+    #    否则未覆盖的项会继续走 VSS 探测 ——
+    #    而 VSS 探测有 7 天新鲜度判据，会把"存在但久未使用"的功能误判为不支持
+    #    （实测：方向盘加热被误判过）
+    "M01": {                      # L6（实测自 LXM01StateDelegate + 实车验证）
+        # ---- App 硬编码的（来自 LXM01StateDelegate）----
+        # ★ 2026-09-24 修正：与 App 一致
+        #   LXM01StateDelegate.getSupportPlateDisplay() → getUN_SUPPORT
+        "牌显": False,
         "冰箱": False,
         "前备箱": False,
         "旋转座椅": False,
         "自动驾驶": False,
+        # ---- 2026-09-24 实车验证补充 ----
+        # L6 是【五座】SUV（前排 2 + 二排 3，无三排）
+        #   服务端对不存在的三排硬件也返回 value=0 + 有效 ts，
+        #   所以不能靠信号探测，必须靠车型判断。
+        "三排座椅": False,
+        "二排座椅": True,         # 五座车的二排（3 座）
+        "座椅加热": True,         # 前后排都有
+        "方向盘加热": True,       # ★ 实车确认有（曾因 VSS 探测新鲜度误判）
+        "哨兵模式": True,
+        "远程拍照": True,         # 360 泊车影像
+        # ★ 2026-09-24 修正：L6 确实【有】遮阳帘（用户确认）
+        #   ⚠️ 之前误判为 False 的依据（"App 引用数 0"）不成立 ——
+        #     那只能说明反编译代码里没找到消费者，不代表硬件不存在。
+        "遮阳帘": True,
+        # L6 Pro 无空气悬架 / 无电动尾翼 / 无旋转座椅
+        "空气悬架": False,
+        "电动尾翼": False,
     },
 }
 
@@ -112,11 +136,17 @@ FEATURE_PROBES: dict[str, list[str]] = {
         "Vehicle.Cabin.Seat.SLSeatHeatState",
         "Vehicle.Cabin.Seat.SRSeatHeatState",
     ],
-    # 三排：有热/通风信号即认为支持（弱探测，避免误杀无中排车型）
+    # ★ 2026-09-24 新增：三排座椅（L8/L9/MEGA 有，L6/L7 无）
+    #
+    # ⚠️ 探测可靠性说明：
+    #   服务端对【不存在的三排硬件】也返回 value=0 + 有效 ts（实测 L6），
+    #   所以【信号探测无法区分】。
+    #   → 因此本项优先由 KNOWN_FEATURES（车型硬编码表）决定；
+    #     未知车型才退回探测（可能误判，但至少不会漏掉真有六座的车）。
     "三排座椅": [
         "Vehicle.Cabin.Seat.TLSeatHeatState",
         "Vehicle.Cabin.Seat.TRSeatHeatState",
-        "Vehicle.Cabin.Seat.TLSeatVentilationState",
+        "Vehicle.Cabin.Seat.TMSeatHeatState",
     ],
     "旋转座椅": [
         "Vehicle.Cabin.Seat.RotatableStatus",
@@ -134,9 +164,21 @@ FEATURE_PROBES: dict[str, list[str]] = {
         "Vehicle.Body.RearSpoiler.Status",
     ],
     # 注: Vehicle.360Svm.ParkPhoto.State (泊车拍照) 是通用功能, 不在此探测
+    # 遮阳帘（L6 有，用户确认）
+    "遮阳帘": [
+        "Vehicle.Body.SunshadeStatus.FrtSunshdSwSts",
+        "Vehicle.Body.SunshadeStatus.RrSunshdSwSts",
+    ],
+    # ★ 2026-09-24 修正：原先探测路径用错
+    #   错误路径（L6 无数据）：
+    #     Vehicle.Camera.Photo.Status
+    #     Vehicle.Camera.RemotePhoto.Status
+    #   正确路径（L6 实测有数据）：
+    #     Vehicle.360Svm.ParkPhoto.State   ← 泊车拍照状态
+    #     Vehicle.360Svm.Park.Filekey      ← 拍照文件 key
     "远程拍照": [
-        "Vehicle.Camera.Photo.Status",
-        "Vehicle.Camera.RemotePhoto.Status",
+        "Vehicle.360Svm.ParkPhoto.State",
+        "Vehicle.360Svm.Park.Filekey",
     ],
 }
 
@@ -193,12 +235,45 @@ def _hardcoded_features(li_api: Any) -> dict[str, Any] | None:
     except Exception:  # noqa: BLE001
         return None
 
-    # 车型代号判定: vehModel 编码需要服务端字典, 这里用 yearModel/seats 等特征
-    # 目前只确证了 M01 (L6)。其他车型无法可靠识别时回退 VSS 探测。
-    # TODO: 拿到更多车型的 ConfigCode 样本后可扩展。
-    # 注: 我们的车 vehModel=JR7 (M01 平台)
-    #     判断依据: 有 360Svm 泊车拍照 + 无冰箱信号 → L6
-    return None   # 暂时禁用，等更多车型样本
+    # ★ 2026-09-24 启用（原先 return None 导致 KNOWN_FEATURES 完全没用上）
+    #
+    # 车型判定依据：
+    #   ConfigCode.vehModel 的编码（如 "JR7"）需要服务端字典才能翻译，
+    #   App 里【没有】该字典（已在 smali/Hermes/resources 全面搜索确认）。
+    #
+    #   因此用【可验证的特征组合】判定：
+    #     ① KNOWN_FEATURES 里的车型代号（M01）来自 App 的
+    #        LXM01StateDelegate 类 —— 该类的存在说明车型属于 M01 平台
+    #     ② 经验判据：有 360Svm.ParkPhoto.State（泊车拍照）
+    #        + 无冰箱信号 → L6
+    #
+    #   ⚠️ 保守策略：
+    #     · 只有能【明确判定】车型时才返回硬编码表
+    #     · 判不出 → 返回 None → 回退 VSS 探测
+    #     · 这样不会把 L9 误判成 L6（进而隐藏三排座椅）
+    code = cfg.get("vehModel") or ""
+    seats_cfg = cfg.get("seats") or ""
+    fridge_cfg = cfg.get("vehRefrigerator") or ""
+    _LOGGER.debug(
+        "ConfigCode: vehModel=%s seats=%s fridge=%s configLevel=%s",
+        code, seats_cfg, fridge_cfg, cfg.get("configLevel"))
+
+    # 已知车型样本（vehModel 编码 → KNOWN_FEATURES 的 key）
+    # ★ 目前只确证了我们的车（JR7 = L6 / M01 平台）
+    KNOWN_CODES = {
+        "JR7": "M01",      # 实测样本（2026-09-23）
+    }
+
+    model_key = KNOWN_CODES.get(code)
+    if not model_key:
+        _LOGGER.debug("未知车型编码 %s，回退 VSS 探测", code)
+        return None
+
+    hard = dict(KNOWN_FEATURES.get(model_key) or {})
+    if not hard:
+        return None
+    hard["_model"] = model_key
+    return hard
 
 
 def detect_features(li_api: Any) -> dict[str, bool]:
@@ -220,7 +295,7 @@ def detect_features(li_api: Any) -> dict[str, bool]:
     # ① 先尝试用 App 的硬编码表（通过 ConfigCode 识别车型）
     hard = _hardcoded_features(li_api)
     if hard:
-        _LOGGER.warning("★ 使用 App 硬编码功能表 (%s): %s", hard.get("_model", "?"),
+        _LOGGER.debug("使用 App 硬编码功能表 (%s): %s", hard.get("_model", "?"),
                         {k: v for k, v in hard.items() if not k.startswith("_")})
         # 用硬编码结果覆盖对应功能
         for feat, val in hard.items():
@@ -264,7 +339,7 @@ def detect_features(li_api: Any) -> dict[str, bool]:
 
     supported = [k for k, v in result.items() if v]
     unsupported = [k for k, v in result.items() if not v]
-    _LOGGER.warning("★ 车型功能探测结果: 支持=%s | 不支持=%s", supported, unsupported)
+    _LOGGER.info("车型功能探测: 支持=%s | 不支持=%s", supported, unsupported)
     return result
 
 

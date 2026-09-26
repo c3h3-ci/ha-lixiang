@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any
 
 
 class Freq(StrEnum):
@@ -75,10 +74,16 @@ SIGNALS: dict[str, SignalSpec] = {
         icon="mdi:snowflake-melt",
         category="空调",
     ),  # 有翻译映射
+    # ★ 2026-09-24 修正：ExSpeedStatus 的真实语义是【快冷快热】
+    #   依据：App 的 LXLiMeshStateDelegate.getNeedRapidCoolheat()
+    #        读的就是 LxMeshVssConstant.getExSpeedStatus()
+    #
+    #   ⚠️ key 保留 ac_fan_speed（避免 unique_id 变化、打断用户自动化），
+    #      只把显示名改为"快冷快热"（实体 ID 不变）
     "ac_fan_speed": SignalSpec(
         key="ac_fan_speed",
         path="Vehicle.Cabin.AC.ExSpeedStatus",
-        name="风速",
+        name="快冷快热",
         freq=Freq.HIGH,
         icon="mdi:fan",
         category="空调",
@@ -86,8 +91,9 @@ SIGNALS: dict[str, SignalSpec] = {
     "ac_on": SignalSpec(
         key="ac_on",
         path="Vehicle.Cabin.AC.FOffStatus",
-        name="ac_on",
+        name="空调开关",
         freq=Freq.HIGH,
+        icon="mdi:air-conditioner",
         platforms=frozenset(),  # ★ 空调开关信号（climate 平台用，不建实体）
     ),
     "ac_set_temp": SignalSpec(
@@ -185,8 +191,11 @@ SIGNALS: dict[str, SignalSpec] = {
     "charge_current_ac": SignalSpec(
         key="charge_current_ac",
         path="Vehicle.Powertrain.Battery.ACChargeCurrent",
-        name="charge_current_ac",
+        name="交流充电电流",
+        unit="A",
         freq=Freq.HIGH,
+        icon="mdi:current-ac",
+        category="充电",
     ),
     "charge_fault": SignalSpec(
         key="charge_fault",
@@ -247,21 +256,29 @@ SIGNALS: dict[str, SignalSpec] = {
     "charge_port_lid_old": SignalSpec(
         key="charge_port_lid_old",
         path="Vehicle.Body.DoorSwitchStatus.ChrgPorLidSts",
-        name="charge_port_lid_old",
+        name="充电口盖(旧信号)",
         freq=Freq.HIGH,
+        icon="mdi:ev-plug-type2",
         platforms=frozenset(),  # ★ 旧版充电口盖路径（仅保留供参考）
+        category="充电",
     ),
     "charge_power_cltc": SignalSpec(
         key="charge_power_cltc",
         path="Vehicle.Powertrain.Battery.CLTCChargePower",
-        name="charge_power_cltc",
+        name="充电功率(CLTC)",
+        unit="kW",
         freq=Freq.HIGH,
+        icon="mdi:lightning-bolt",
+        category="充电",
     ),
     "charge_power_wltc": SignalSpec(
         key="charge_power_wltc",
         path="Vehicle.Powertrain.Battery.WLTCChargePower",
-        name="charge_power_wltc",
+        name="充电功率(WLTC)",
+        unit="kW",
         freq=Freq.HIGH,
+        icon="mdi:lightning-bolt",
+        category="充电",
     ),
     "charge_remain_time": SignalSpec(
         key="charge_remain_time",
@@ -285,8 +302,11 @@ SIGNALS: dict[str, SignalSpec] = {
     "charge_voltage_ac": SignalSpec(
         key="charge_voltage_ac",
         path="Vehicle.Powertrain.Battery.ACChargeVoltage",
-        name="charge_voltage_ac",
+        name="交流充电电压",
+        unit="V",
         freq=Freq.HIGH,
+        icon="mdi:sine-wave",
+        category="充电",
     ),
     "config_code": SignalSpec(
         key="config_code",
@@ -606,8 +626,10 @@ SIGNALS: dict[str, SignalSpec] = {
     "mileage_final": SignalSpec(
         key="mileage_final",
         path="Vehicle.Cabin.CLTC.MileageFinalResult",
-        name="mileage_final",
+        name="总里程",
+        unit="km",
         freq=Freq.HIGH,
+        icon="mdi:counter",
         platforms=frozenset(),  # ★ L6 实测无数据（MileageFinalResult 返回 None）
     ),
     "mirror_left": SignalSpec(
@@ -669,8 +691,10 @@ SIGNALS: dict[str, SignalSpec] = {
     "ota_short": SignalSpec(
         key="ota_short",
         path="Vehicle.Version.OTA.displayedBaseline",
-        name="ota_short",
+        name="OTA 版本(简)",
         freq=Freq.LOW,
+        icon="mdi:cellphone-arrow-down",
+        diagnostic=True,
     ),
     "ota_state": SignalSpec(
         key="ota_state",
@@ -736,26 +760,34 @@ SIGNALS: dict[str, SignalSpec] = {
     "range_elec_cltc": SignalSpec(
         key="range_elec_cltc",
         path="Vehicle.Cabin.CLTC.PureElecEnduranceMileInd",
-        name="range_elec_cltc",
+        name="纯电续航(CLTC)",
+        unit="km",
         freq=Freq.HIGH,
+        icon="mdi:ev-station",
     ),
     "range_elec_wltc": SignalSpec(
         key="range_elec_wltc",
         path="Vehicle.Cabin.WLTC.PureElecEnduranceMileInd",
-        name="range_elec_wltc",
+        name="纯电续航(WLTC)",
+        unit="km",
         freq=Freq.HIGH,
+        icon="mdi:ev-station",
     ),
     "range_fuel_cltc": SignalSpec(
         key="range_fuel_cltc",
         path="Vehicle.Cabin.CLTC.FuelEnduranceMileInd",
-        name="range_fuel_cltc",
+        name="燃油续航(CLTC)",
+        unit="km",
         freq=Freq.HIGH,
+        icon="mdi:gas-station",
     ),
     "range_fuel_wltc": SignalSpec(
         key="range_fuel_wltc",
         path="Vehicle.Cabin.WLTC.FuelEnduranceMileInd",
-        name="range_fuel_wltc",
+        name="燃油续航(WLTC)",
+        unit="km",
         freq=Freq.HIGH,
+        icon="mdi:gas-station",
     ),
     "scene_mode": SignalSpec(
         key="scene_mode",
@@ -927,7 +959,7 @@ SIGNALS: dict[str, SignalSpec] = {
         name="哨兵开关",
         freq=Freq.HIGH,
         icon="mdi:shield-check",
-        platforms=frozenset({'binary_sensor'}),
+        platforms=frozenset(),  # ★ 2026-09-24：改由 switch 平台提供
         semantics=Semantics.JSON_FIELD,
         json_field="sentinelSwitch",
     ),
@@ -1187,20 +1219,184 @@ SIGNALS: dict[str, SignalSpec] = {
     "window_skylight": SignalSpec(
         key="window_skylight",
         path="Vehicle.Body.WindowPosition.SkylightWindow",
-        name="window_skylight",
+        name="天窗位置",
+        unit="%",
         freq=Freq.HIGH,
+        icon="mdi:window-closed-variant",
         platforms=frozenset(),  # ★ L6 实测无数据（SkylightWindow 返回 None）
     ),
     # ★ 虚拟信号（非 VSS）—— 值来自 coordinator.data 的其他字段
     # ⚠️ gen_signals.py 从 VSS_PATHS 生成，不会包含它们 —— 需手工维护
-    # path="" → by_freq/paths_for/VSS_PATHS_COMPAT 会排除，不进 VSS 轮询
     "online_status": SignalSpec(
         key="online_status",
-        path="",
+        path="",                      # 无 VSS 路径（虚拟信号）
         name="在线状态",
         freq=Freq.HIGH,
         icon="mdi:car-connected",
         category="状态",
+    ),
+    # ═══════════════════════════════════════════════════════════════════
+    #  ★ 2026-09-24 手工补充的信号（task-14 报告，已实测有数据）
+    #  ⚠️ 这些不在 gen_signals.py 的生成源里，需手工维护
+    # ═══════════════════════════════════════════════════════════════════
+    # ---- 授权 / 账号 ----
+    "virtual_key_auth": SignalSpec(
+        key="virtual_key_auth",
+        path="Vehicle.Cabin.RmtVirtualKeyAuthSts",
+        name="远程虚拟钥匙授权",
+        freq=Freq.LOW,
+        icon="mdi:key-variant",
+        category="状态",
+        diagnostic=True,
+    ),
+    "vehicle_accounts": SignalSpec(
+        key="vehicle_accounts",
+        path="Vehicle.Account.Cloud.VehicleAccounts",
+        name="车辆账号",
+        freq=Freq.LOW,
+        icon="mdi:account-multiple",
+        category="信息",
+        diagnostic=True,
+    ),
+    # ---- 激活流程 ----
+    "provision_complete": SignalSpec(
+        key="provision_complete",
+        path="Vehicle.Provision.Process.Complete",
+        name="激活完成",
+        freq=Freq.LOW,
+        icon="mdi:check-circle",
+        category="信息",
+        diagnostic=True,
+    ),
+    "provision_finish": SignalSpec(
+        key="provision_finish",
+        path="Vehicle.Provision.Process.FinishSuccess",
+        name="激活成功信息",
+        freq=Freq.LOW,
+        icon="mdi:clipboard-check",
+        category="信息",
+        diagnostic=True,
+    ),
+    # ---- 保养二级 ----
+    "maint_engine_level2": SignalSpec(
+        key="maint_engine_level2",
+        path="Vehicle.Carcenter.Maintain.enginelevel2",
+        name="保养二级",
+        freq=Freq.LOW,
+        icon="mdi:oil-level",
+        category="保养",
+        diagnostic=True,
+    ),
+    # ---- 座椅门干涉 ----
+    "seat_l_door_interference": SignalSpec(
+        key="seat_l_door_interference",
+        path="Vehicle.Body.SeatLDoor.InterferenceSts",
+        name="左座椅门干涉",
+        freq=Freq.MID,
+        icon="mdi:alert",
+        category="座椅",
+        diagnostic=True,
+    ),
+    "seat_r_door_interference": SignalSpec(
+        key="seat_r_door_interference",
+        path="Vehicle.Body.SeatRDoor.InterferenceSts",
+        name="右座椅门干涉",
+        freq=Freq.MID,
+        icon="mdi:alert",
+        category="座椅",
+        diagnostic=True,
+    ),
+    # ---- 冰箱预约 / 离车模式 ----
+    "fridge_reserve": SignalSpec(
+        key="fridge_reserve",
+        path="Vehicle.CarSettings.Xmode.ReserveFridge",
+        name="冰箱预约",
+        freq=Freq.MID,
+        icon="mdi:fridge-outline",
+        category="冰箱",
+    ),
+    "xmode": SignalSpec(
+        key="xmode",
+        path="Vehicle.CarSettings.MoveOffOnTime.Xmode",
+        name="离车模式",
+        freq=Freq.MID,
+        icon="mdi:car-off",
+        category="设置",
+    ),
+    # ---- 空调温度色 ----
+    "ac_temp_color": SignalSpec(
+        key="ac_temp_color",
+        path="Vehicle.Cabin.AC.FrtWindTempColor",
+        name="空调温度色",
+        freq=Freq.MID,
+        icon="mdi:palette",
+        category="空调",
+        diagnostic=True,
+    ),
+    # ---- 充电校准 / 位置 / 后负载 ----
+    "charge_calibration": SignalSpec(
+        key="charge_calibration",
+        path="Vehicle.VehInfo.CarCenter.ChargeManagement.ChargingCalibration",
+        name="充电校准",
+        freq=Freq.LOW,
+        icon="mdi:tune",
+        category="充电桩",
+        diagnostic=True,
+    ),
+    "charge_here": SignalSpec(
+        key="charge_here",
+        path="Vehicle.Powertrain.ChargingPile.ScheduledCharging.ChargeHere",
+        name="充电位置",
+        freq=Freq.LOW,
+        icon="mdi:map-marker",
+        category="充电桩",
+    ),
+    "rear_load_mode": SignalSpec(
+        key="rear_load_mode",
+        path="Vehicle.VehInfo.CarSettings.Maintain.RearLoadModeSetting",
+        name="后负载模式",
+        freq=Freq.LOW,
+        icon="mdi:weight",
+        category="设置",
+        diagnostic=True,
+    ),
+    # ---- 电池功率条 ----
+    "ress_power_bar_color": SignalSpec(
+        key="ress_power_bar_color",
+        path="Vehicle.Powertrain.Battery.RESSPowerBarCol",
+        name="电池功率条颜色",
+        freq=Freq.MID,
+        icon="mdi:palette-outline",
+        category="电池",
+        diagnostic=True,
+    ),
+    # ---- OGC（第三方充电桩）----
+    "ogc_charge_current": SignalSpec(
+        key="ogc_charge_current",
+        path="Vehicle.Powertrain.Battery.OGCChargeCurrent",
+        name="OGC 充电电流",
+        freq=Freq.MID,
+        unit="A",
+        icon="mdi:current-ac",
+        category="充电桩",
+    ),
+    "ogc_charge_voltage": SignalSpec(
+        key="ogc_charge_voltage",
+        path="Vehicle.Powertrain.Battery.OGCChargeVoltage",
+        name="OGC 充电电压",
+        freq=Freq.MID,
+        unit="V",
+        icon="mdi:sine-wave",
+        category="充电桩",
+    ),
+    "ogc_type": SignalSpec(
+        key="ogc_type",
+        path="Vehicle.Powertrain.ChargingPile.OGCType",
+        name="OGC 类型",
+        freq=Freq.LOW,
+        icon="mdi:ev-station",
+        category="充电桩",
+        diagnostic=True,
     ),
 }
 
@@ -1285,7 +1481,7 @@ def specs_for(platform: str, features: dict | None = None) -> list[SignalSpec]:
 def by_freq(freq: Freq) -> list[SignalSpec]:
     """按频率档位筛选（coordinator 用）。
 
-    ★ 排除虚拟信号（path 为空）—— 它们不走 VSS 轮询。
+    ★ 2026-09-24：排除虚拟信号（path 为空）—— 它们不走 VSS 轮询。
     """
     return [s for s in SIGNALS.values() if s.freq == freq and s.path]
 
@@ -1294,12 +1490,14 @@ def paths_for(freq: Freq | None = None) -> list[str]:
     """返回 VSS 路径列表（coordinator 轮询用）。
 
     freq=None 表示全部。
-    ★ 排除 path 为空的虚拟信号。
+
+    ★ 2026-09-24：排除【虚拟信号】（path 为空）——
+      它们的值来自 coordinator.data 的其他字段，不通过 VSS 轮询。
     """
     items = [s for s in SIGNALS.values() if s.path]
-    if freq is None:
-        return [s.path for s in items]
-    return [s.path for s in items if s.freq == freq]
+    if freq is not None:
+        items = [s for s in items if s.freq == freq]
+    return [s.path for s in items]
 
 
 def path_of(key: str) -> str:
@@ -1315,7 +1513,6 @@ def value_map_of(key: str) -> dict | None:
 
 
 # 兼容：把 SIGNALS 转成旧的 {key: path} 形式
-# ★ 排除 path 为空的虚拟信号（如 online_status）
 VSS_PATHS_COMPAT: dict[str, str] = {
     k: s.path for k, s in SIGNALS.items() if s.path
 }

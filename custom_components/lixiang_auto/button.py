@@ -32,14 +32,33 @@ from .entity_helper import route_id_of_vin
 
 _LOGGER = logging.getLogger(LOGGER_NAME)
 
+# 车窗四位置（前左/前右/后左/后右）
+
+
+
 # (唯一后缀, 名称, 图标, cmdKey, cmdData, 是否等待结果)
-# ★ 2026-09-24：开/关尾门、开/关窗 已收敛到 cover.py（巴法云识别 cover，不识别 button）；
-#   寻车另有 switch 版本（sw_find_car）。此处仅保留 button 面板里仍常用的项。
+# ★ 2026-09-24 精简（用户反馈"开窗关窗开两个实体好像是多余的"）：
+#   删除了 4 个被 cover 替代的按钮：
+#     plg_open / plg_close      → cover.wei_men（尾门）
+#     window_open / window_close → cover.che_chuang（车窗）
+#
+# ★ 排序约定：找车类 → 驾驶授权 → 影像
 BUTTONS = (
+    # ---- 找车（同一 cmdKey 不同 searchType）----
     ("veh_search", "寻车", "mdi:car-search",
      "remoteVehSearch", {"searchType": "0"}, False),
-    ("engine_start", "远程启动", "mdi:engine",
+    ("flash_light", "闪灯", "mdi:car-light-high",
+     "remoteVehSearch", {"searchType": 1}, False),
+    ("whistle", "鸣笛", "mdi:bullhorn",
+     "remoteVehSearch", {"searchType": 2}, False),
+    # ---- 驾驶 ----
+    #   远程启动 → 远程授权（cmdKey remoteVehAuth）
+    ("engine_start", "远程授权", "mdi:key-chain",
      "remoteVehAuth", {}, True),
+    # ---- 影像 ----
+    #   ⚠️ 同样用 "timestap"；vehImage 固定 "veh_svm_image"
+    ("svm_photo", "远程拍照", "mdi:camera",
+     "mobileVehSvm", {"vehImage": "veh_svm_image"}, True),
 )
 
 
@@ -96,17 +115,28 @@ class LiCarButton(CoordinatorEntity, ButtonEntity):
     async def async_press(self, **kwargs: Any) -> None:
         """下发命令.
 
-        寻车 (wait_result=False) 用 fire-and-forget: 鸣笛/闪灯无明确终态,
-        轮询只会白等到超时。
+        寻车/闪灯/鸣笛 (wait_result=False) 用 fire-and-forget:
+        这类命令无明确终态，轮询只会白等到超时。
+
+        ★ 2026-09-24：哨兵与 SVM 的 cmdData 需要 "timestap" 字段
+          （App 的拼写就是少一个 m，必须照抄）——
+          这里自动注入当前毫秒时间戳。
         """
+        import time as _t
+
+        cmd_data = dict(self._cmd_data)
+        # 哨兵 / 拍照 需要时间戳（字段名 timestap，非 timestamp）
+        if self._cmd_key in ("sentinelModeSetting", "mobileVehSvm"):
+            cmd_data["timestap"] = int(_t.time() * 1000)
+
         try:
             if self._wait_result:
                 res = await self.hass.async_add_executor_job(
-                    self._api.send_command, self._cmd_key, self._cmd_data)
+                    self._api.send_command, self._cmd_key, cmd_data)
             else:
                 res = await self.hass.async_add_executor_job(
                     self._api.send_command_fire_and_forget,
-                    self._cmd_key, self._cmd_data)
+                    self._cmd_key, cmd_data)
             self._last_result = res
             _LOGGER.info("车控 %s %s 已执行: %s", self._cmd_key, self._cmd_data, res)
         except Exception as err:  # noqa: BLE001

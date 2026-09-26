@@ -16,7 +16,6 @@ from typing import Any
 from homeassistant.components.sensor import (
     RestoreSensor,
     SensorDeviceClass,
-    SensorEntity,
     SensorEntityDescription,
     SensorStateClass,
 )
@@ -40,7 +39,6 @@ from homeassistant.const import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .translations import translate
 from .const import CONF_VIN, DOMAIN, LOGGER_NAME
 from .entity_helper import route_id_of_vin
 
@@ -145,7 +143,7 @@ SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
     _mk("ac_set_temp", ('空调设定温度', 'TEMPERATURE', '°C', None, 'mdi:thermostat', '空调')),
     _mk("ac_wind_mode", ('风向模式', None, None, None, 'mdi:weather-windy', '空调')),
     _mk("ac_defrost", ('除霜模式', None, None, None, 'mdi:snowflake-melt', '空调')),
-    _mk("ac_fan_speed", ('风速', None, None, None, 'mdi:fan', '空调')),
+    _mk("ac_fan_speed", ('快冷快热', None, None, None, 'mdi:fan', '空调')),
     # ---- 座椅 ----
     _mk("seat_fl_heat", ('主驾座椅加热', None, None, None, 'mdi:car-seat-heater', '座椅')),
     _mk("seat_fl_vent", ('主驾座椅通风', None, None, None, 'mdi:car-seat-cooler', '座椅')),
@@ -238,8 +236,21 @@ FEATURE_BY_KEY_PREFIX: dict[str, str] = {
     "fridge": "冰箱",
     "sentry": "哨兵模式",
     "lock_front_trunk": "前备箱",
+    # ★ 2026-09-24 修复：座椅映射不完整
+    #   问题：L6（五座）也创建了三排座椅实体
+    #   原因：
+    #     ① "seat_tl"/"seat_tr"/"seat_tm"/"seat_sm" 缺映射 → 不受功能过滤
+    #     ② 服务端对不存在的三排硬件也返回 value=0 + 有效 ts
+    #        → 信号探测无法区分 → 必须靠车型判断
+    #
+    #   座椅代号：F=Front(前) S=Second(二排) T=Third(三排)
+    #             L=Left R=Right M=Middle
     "seat_sl": "二排座椅",
     "seat_sr": "二排座椅",
+    "seat_sm": "二排座椅",     # ★ 二排中（L6 有，L8/L9 无）
+    "seat_tl": "三排座椅",     # ★ 三排左（仅 L8/L9/MEGA）
+    "seat_tr": "三排座椅",     # ★ 三排右
+    "seat_tm": "三排座椅",     # ★ 三排中
     "wheel_heat": "方向盘加热",
     "spoiler": "电动尾翼",
     "suspension": "空气悬架",
@@ -420,9 +431,9 @@ class LiCarSensor(CoordinatorEntity, RestoreSensor):
                 if self._last_value is None:
                     return None
         else:
-            # ★ 远端修复：非 VSS 信号（如 online_status）跳过此判定
+            # ★ 2026-09-24 修复：非 VSS 信号（如 online_status）跳过此判定
             #   它的 _vss() 恒为 None → ts="" → 会被误判为"从未上报"
-            #   → 永远显示 unknown
+            #   → 永远显示 unknown（实测踩坑：在线状态一直 unknown）
             ts = ""
 
         if v is not None:
