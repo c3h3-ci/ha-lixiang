@@ -62,6 +62,7 @@ from homeassistant.helpers.event import async_track_time_interval
 
 from .const import CONF_VIN, DOMAIN, LOGGER_NAME
 from .entity_helper import route_id_of_vin
+from .device import build_device_info
 
 _LOGGER = logging.getLogger(LOGGER_NAME)
 
@@ -89,13 +90,15 @@ async def async_setup_entry(
 ) -> None:
     _LOGGER.debug("notify.async_setup_entry")
     data = hass.data[DOMAIN][config_entry.entry_id]
+    coordinator = data.get("coordinator")
     li_api = data.get("li_api")
     vin = config_entry.data.get(CONF_VIN) or ""
     _LOGGER.debug("notify: li_api=%s vin=%s", bool(li_api), vin)
     identifiers = {(DOMAIN, vin)} if vin else {(DOMAIN, config_entry.entry_id)}
-    device_info = DeviceInfo(
-        identifiers=identifiers, manufacturer="理想汽车",
-        model="理想 L6", name="Li Auto L6" if vin else "Li Auto",
+    # ★ 名字全取自服务端（vehicleNickname / spu），不硬编码车型
+    device_info = build_device_info(
+        coordinator, config_entry, li_api,
+        ability=data.get("ability"),
     )
     if li_api is None:
         _LOGGER.warning("无密码登录凭据，跳过 notify 实体")

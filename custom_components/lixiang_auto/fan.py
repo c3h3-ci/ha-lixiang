@@ -26,6 +26,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import CONF_VIN, DOMAIN, LOGGER_NAME
 from .gate import require_control
 from .entity_helper import route_id_of_vin
+from .device import build_device_info
 
 _LOGGER = logging.getLogger(LOGGER_NAME)
 
@@ -170,9 +171,11 @@ async def async_setup_entry(
     coordinator, li_api = data["coordinator"], data.get("li_api")
     vin = config_entry.data.get(CONF_VIN) or ""
     identifiers = {(DOMAIN, vin)} if vin else {(DOMAIN, config_entry.entry_id)}
-    device_info = DeviceInfo(
-        identifiers=identifiers, manufacturer="理想汽车",
-        model="理想 L6", name="Li Auto L6" if vin else "Li Auto",
+    # ★ 名字全取自服务端（vehicleNickname / spu），不硬编码车型
+    _d = hass.data[DOMAIN][config_entry.entry_id]
+    device_info = build_device_info(
+        _d.get("coordinator"), config_entry, _d.get("li_api"),
+        ability=_d.get("ability"),
     )
     if li_api is None:
         _LOGGER.warning("无密码登录凭据，跳过 fan 实体")

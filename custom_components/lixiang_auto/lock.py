@@ -27,6 +27,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import CONF_VIN, DOMAIN, LOGGER_NAME
 from .gate import require_control
 from .entity_helper import route_id_of_vin
+from .device import build_device_info
 
 _LOGGER = logging.getLogger(LOGGER_NAME)
 
@@ -46,9 +47,11 @@ async def async_setup_entry(
     coordinator, li_api = data["coordinator"], data.get("li_api")
     vin = config_entry.data.get(CONF_VIN) or ""
     identifiers = {(DOMAIN, vin)} if vin else {(DOMAIN, config_entry.entry_id)}
-    device_info = DeviceInfo(
-        identifiers=identifiers, manufacturer="理想汽车",
-        model="理想 L6", name="Li Auto L6" if vin else "Li Auto",
+    # ★ 名字全取自服务端（vehicleNickname / spu），不硬编码车型
+    _d = hass.data[DOMAIN][config_entry.entry_id]
+    device_info = build_device_info(
+        _d.get("coordinator"), config_entry, _d.get("li_api"),
+        ability=_d.get("ability"),
     )
     if li_api is None:
         _LOGGER.warning("无密码登录凭据，跳过 lock 实体")
@@ -61,18 +64,18 @@ class LiCarDoorLock(CoordinatorEntity, LockEntity):
 
     _attr_has_entity_name = True
     # ★ 2026-09-26：名字对齐 App（App 叫「车锁」，见 vehicle_control_car_lock）
-    @property
-    def name(self) -> str:
-        """实体名（取自 App 官方叫法）。"""
-        try:
-            from .vehicle_ability import app_name
-            return app_name("lock", default="车锁")
-        except Exception:  # noqa: BLE001
-            return "车锁"
+    #   ⚠️ 名字在 __init__ 里预取（app_name 会读 JSON 文件，
+    #      放在 name 属性里会在事件循环中阻塞 → HA 告警）
     _attr_icon = "mdi:car-door-lock"
 
     def __init__(self, coordinator, li_api, device_info, vin: str) -> None:
         super().__init__(coordinator)
+        # ★ 名字对齐 App（在 __init__ 预取，避免事件循环里读文件）
+        try:
+            from .vehicle_ability import app_name
+            self._attr_name = app_name("lock", default="车锁")
+        except Exception:  # noqa: BLE001
+            self._attr_name = "车锁"
         self._api = li_api
         self._rid = route_id_of_vin(vin)
 

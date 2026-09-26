@@ -364,12 +364,28 @@ def load_app_names() -> dict[str, dict[str, str]]:
     """
     f = _CONFIG_DIR / "_names_app.json"
     if not f.exists():
+        _LOGGER.debug("名称表不存在: %s", f.name)
         return {}
     try:
         raw = json.loads(f.read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001
+    except Exception as err:  # noqa: BLE001
+        # ★ 2026-09-26：文件损坏/编码异常时不能崩
+        #   （实体 name 属性里调用它，抛异常会让整个平台 setup 失败）
+        _LOGGER.warning("解析名称表失败（将回退默认名）: %s", err)
         return {}
-    return {k: v for k, v in raw.items() if not k.startswith("_")}
+    if not isinstance(raw, dict):
+        return {}
+    return {k: v for k, v in raw.items()
+            if not k.startswith("_") and isinstance(v, dict)}
+
+
+def preload_names() -> None:
+    """预热名称表（应在 executor 里调用一次，避免事件循环里读文件）。
+
+    ★ HA 会在事件循环里构造实体，若那时首次读 JSON 会触发
+      "Detected blocking call to open" 告警。
+    """
+    load_app_names()
 
 
 def app_name(key: str, lang: str = "zh", default: str = "") -> str:

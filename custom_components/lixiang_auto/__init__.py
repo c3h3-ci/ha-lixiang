@@ -120,6 +120,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # ★ 2026-09-26：先拿车型能力表（读 APK 内置 JSON，与 App 一致）
             #   各平台用它决定"生成哪些实体"（如 L8/L9 的三排座椅）
             ability = await hass.async_add_executor_job(get_ability, li_api)
+            # ★ 预热名称表（在 executor 里，避免事件循环读文件告警）
+            from .vehicle_ability import preload_names
+            await hass.async_add_executor_job(preload_names)
+
+            # ★ 2026-09-26：车辆显示名（服务端 vehicleNickname / spu）
+            #   在 executor 里取一次，缓存到 coordinator.data，
+            #   各平台的 build_device_info 直接读缓存（零网络、不阻塞事件循环）
+            from .device import vehicle_names as _veh_names
+            _names = await hass.async_add_executor_job(
+                _veh_names, li_api, ability)
+            if coordinator.data is None:
+                coordinator.data = {}
+            coordinator.data["vehicle_name_info"] = _names
+            _LOGGER.info("车辆显示名: %s (%s)", _names.get("zh"), _names.get("en"))
             features = await hass.async_add_executor_job(detect_features, li_api)
             vehicle_config = await hass.async_add_executor_job(
                 read_vehicle_config, li_api)

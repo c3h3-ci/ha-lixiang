@@ -41,6 +41,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_VIN, DOMAIN, LOGGER_NAME
 from .entity_helper import route_id_of_vin
+from .device import build_device_info
 
 _LOGGER = logging.getLogger(LOGGER_NAME)
 
@@ -275,17 +276,22 @@ async def async_setup_entry(
     vin = config_entry.data.get(CONF_VIN) or ""
 
     identifiers = {(DOMAIN, vin)} if vin else {(DOMAIN, config_entry.entry_id)}
+    # ★ 2026-09-26：设备名统一由 build_device_info 生成（取自服务端，
+    #   不再硬编码 "理想 L6"；L8/L9/MEGA 用户会看到自己的车型名）
+    _d = hass.data[DOMAIN][config_entry.entry_id]
+    device_info = build_device_info(
+        coordinator, config_entry, _d.get("li_api"),
+        ability=_d.get("ability"),
+    )
+    # 同步创建/更新设备注册项（用同一个 device_info，避免出现两个设备名）
     device_registry = dr.async_get(hass)
     device_registry.async_get_or_create(
         config_entry_id=config_entry.entry_id,
         identifiers=identifiers,
-        name="Li Auto L6" if vin else "Li Auto",
-        manufacturer="理想汽车",
-        model="理想 L6",
-    )
-    device_info = DeviceInfo(
-        identifiers=identifiers, manufacturer="理想汽车",
-        model="理想 L6", name="Li Auto L6" if vin else "Li Auto",
+        name=device_info["name"],
+        manufacturer=device_info["manufacturer"],
+        model=device_info["model"],
+        serial_number=vin or None,
     )
 
     # ★ 2026-09-24 接入 signals.py（架构方案 2.4）

@@ -18,6 +18,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 
 from .const import CONF_VIN, DOMAIN, LOGGER_NAME
 from .entity_helper import route_id_of_vin
+from .device import build_device_info
 
 _LOGGER = logging.getLogger(LOGGER_NAME)
 
@@ -141,10 +142,11 @@ async def async_setup_entry(
     coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
     vin = config_entry.data.get(CONF_VIN) or ""
     identifiers = {(DOMAIN, vin)} if vin else {(DOMAIN, config_entry.entry_id)}
-    device_info = DeviceInfo(
-        identifiers=identifiers, manufacturer="理想汽车",
-        model="理想 L6" if vin else "理想汽车",
-        name="Li Auto L6" if vin else "Li Auto",
+    # ★ 名字全取自服务端（vehicleNickname / spu），不硬编码车型
+    _d = hass.data[DOMAIN][config_entry.entry_id]
+    device_info = build_device_info(
+        coordinator, config_entry, _d.get("li_api"),
+        ability=_d.get("ability"),
     )
     if vin:
         device_info["serial_number"] = vin
