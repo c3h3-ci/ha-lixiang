@@ -126,32 +126,38 @@ class TestFanEntityTable:
         }
         assert keys == expected, f"座椅实体不符: 缺 {expected - keys}, 多 {keys - expected}"
 
-    def test_speculative_control_types_user_verified(self):
-        """★ 3 个推测 controlType 已被用户实测确认可用。
+    def test_second_row_control_types_match_app_jobtypes(self):
+        """★ 二排 5 个 controlType 都来自 App 的 jobTypes（JS bundle）。
 
-        这些在 App 的常量表里【找不到】：
-          secMSeatHeatSw  ─ App 只有 secL/secR
-          secLSeatVentSw  ─ App 无二排通风
-          secRSeatVentSw  ─ 同上
-        但服务端接受（用户实测"座椅加热都正常"）。
+        ⚠️ 2026-09-26 更正：这些**不是**推测命名，App 里就有。
 
-        ⚠️ 改动前必须重新实测 —— 这些不是逆向得出的。
+        权威来源：assets/index.vehicle.js 的 jobTypes 对象
+          secLSeatHeatSw / secLSeatVentSw / secMSeatHeatSw
+          secRSeatHeatSw / secRSeatVentSw
+          （另有 thirdL/M/RSeatHeatSw —— 三排，L6 五座车无）
+
+        ⚠️ 陷阱：smali 的 MVehicleControlManager 里只有 6 个
+                （fl/fr 加热通风 + secL/secR 加热），
+                那是【子集白名单】，不是完整定义。
+                只查 smali 会误判为"App 没有"。
         """
         by_key = {f[0]: f[4] for f in self._fans()}
-        speculative = {
-            "seat_sm_heat": "secMSeatHeatSw",
+        second_row = {
+            "seat_sl_heat": "secLSeatHeatSw",
             "seat_sl_vent": "secLSeatVentSw",
+            "seat_sm_heat": "secMSeatHeatSw",
+            "seat_sr_heat": "secRSeatHeatSw",
             "seat_sr_vent": "secRSeatVentSw",
         }
-        for key, ctrl in speculative.items():
+        for key, ctrl in second_row.items():
             assert by_key.get(key) == ctrl, (
-                f"{key} 应为 {ctrl}（实测确认），实际 {by_key.get(key)}")
+                f"{key} 应为 {ctrl}，实际 {by_key.get(key)}")
 
-        # 源码注释里必须有"实测"字样（防止后人误以为是逆向得出的）
+        # 源码里应明确这些来自 App 的 jobTypes（防止后人又误判）
         src = (Path(__file__).resolve().parent.parent
                / "custom_components" / "lixiang_auto" / "fan.py").read_text()
-        assert "实测确认" in src or "用户实测" in src, (
-            "fan.py 应标注这 3 个 controlType 是【实测确认】的")
+        assert "jobTypes" in src, (
+            "fan.py 应注明二排 controlType 来自 App 的 jobTypes")
 
 
     def test_control_types_match_app(self):

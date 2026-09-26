@@ -123,21 +123,25 @@ SEAT_FANS = (
     ("seat_fr_vent", "副驾座椅通风", "mdi:car-seat-cooler",
      "seat_fr_vent", "frSeatVentSw", "座椅加热"),
     # ★ 二排（L6 五座车的二排：左/中/右三个位置）
+    #   ★★ 2026-09-26 更正：这 3 个 controlType 都是【App 就有的】，
+    #      定义在 assets/index.vehicle.js 的 jobTypes 对象里：
+    #        secLSeatHeatSw / secLSeatVentSw / secMSeatHeatSw
+    #        secRSeatHeatSw / secRSeatVentSw
+    #      ⚠️ 之前的注释说"App 里没有、是推测命名" —— 那是错的，
+    #         因为只查了 smali（MVehicleControlManager 里只有 6 个），
+    #         没查 JS bundle（jobTypes 里有 12 个）。
+    #      ★ 权威来源 = JS bundle 的 jobTypes；smali 那份是子集白名单。
     ("seat_sl_heat", "二排左座椅加热", "mdi:car-seat-heater",
      "seat_sl_heat", "secLSeatHeatSw", "二排座椅"),
     ("seat_sr_heat", "二排右座椅加热", "mdi:car-seat-heater",
      "seat_sr_heat", "secRSeatHeatSw", "二排座椅"),
-    # ★ 2026-09-24 新增，★ 2026-09-26 用户实测确认全部可用：
-    #   实测 SMSeatHeatState 存在（二排中加热状态信号）
-    #   App 里【没有】对应的 controlType（只有 secL/secR），
-    #   但推测命名 secMSeatHeatSw 被服务端接受 —— 用户实测"座椅加热都正常"
     ("seat_sm_heat", "二排中座椅加热", "mdi:car-seat-heater",
      "seat_sm_heat", "secMSeatHeatSw", "二排座椅"),
-    # ★ 同样为推测命名（App 无），2026-09-26 用户实测确认可用
     ("seat_sl_vent", "二排左座椅通风", "mdi:car-seat-cooler",
      "seat_sl_vent", "secLSeatVentSw", "二排座椅"),
     ("seat_sr_vent", "二排右座椅通风", "mdi:car-seat-cooler",
      "seat_sr_vent", "secRSeatVentSw", "二排座椅"),
+    # 注：App 还有三排 3 个（thirdL/M/RSeatHeatSw），L6 五座车没有 → 不实现
 )
 
 
