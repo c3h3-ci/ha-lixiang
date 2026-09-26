@@ -163,6 +163,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 SERVICE_WAKEUP = "wakeup"
 SERVICE_REFRESH = "refresh"
+SERVICE_DUMP_ABILITY = "dump_ability"
 
 
 def _async_register_services(hass: HomeAssistant) -> None:
@@ -206,9 +207,54 @@ def _async_register_services(hass: HomeAssistant) -> None:
             except Exception as err:  # noqa: BLE001
                 _LOGGER.error("唤醒失败: %s", err)
 
+    async def _handle_dump_ability(call) -> None:
+        """导出车型能力表（诊断用）。
+
+        ★ 2026-09-26 新增：把车型能力表（来自 APK 内置 JSON）写入
+          `<config>/lixiang_ability_<modelId>.json`，方便：
+            · 排查"为什么某个实体没出现"
+            · 用户提交到 issue 帮我们支持新车型
+
+        同时把摘要打到日志（INFO）。
+        """
+        import json as _json  # noqa: PLC0415
+        from pathlib import Path as _Path  # noqa: PLC0415
+
+        target_vin = (call.data or {}).get("vin")
+        for eid, d in (hass.data.get(DOMAIN) or {}).items():
+            if not isinstance(d, dict):
+                continue
+            entry = hass.config_entries.async_get_entry(eid)
+            if entry is None:
+                continue
+            if target_vin and (entry.data.get(CONF_VIN) or "") != target_vin:
+                continue
+            ab = d.get("ability")
+            feats = d.get("features") or {}
+            if ab is None:
+                _LOGGER.warning("能力表不可用（无 modelId 或未探测）")
+                continue
+            try:
+                dump = ab.dump()
+                dump["features_detected"] = feats
+                out = _Path(hass.config.config_dir) / (
+                    f"lixiang_ability_{ab.model_id or 'unknown'}.json")
+                out.write_text(
+                    _json.dumps(dump, ensure_ascii=False, indent=2),
+                    encoding="utf-8")
+                _LOGGER.info(
+                    "能力表已导出: %s（%s，%s）| 三排=%s 二排中=%s 冰箱=%s",
+                    out, ab.desc, ab.seat_layout(),
+                    ab.has("thirdLSeatSw"), ab.has("secMSeatSw"),
+                    ab.is_supported("fridge"))
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.error("导出能力表失败: %s", err)
+
     hass.services.async_register(DOMAIN, SERVICE_REFRESH, _handle_refresh)
     hass.services.async_register(DOMAIN, SERVICE_WAKEUP, _handle_wakeup)
-    _LOGGER.debug("已注册服务: %s.refresh / %s.wakeup", DOMAIN, DOMAIN)
+    hass.services.async_register(DOMAIN, SERVICE_DUMP_ABILITY, _handle_dump_ability)
+    _LOGGER.debug("已注册服务: %s.refresh / %s.wakeup / %s.dump_ability",
+                  DOMAIN, DOMAIN, DOMAIN)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -226,7 +272,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN].pop(entry.entry_id)
         # 最后一个条目卸载时移除服务
         if not hass.data.get(DOMAIN):
-            for svc in (SERVICE_REFRESH, SERVICE_WAKEUP):
+            for svc in (SERVICE_REFRESH, SERVICE_WAKEUP, SERVICE_DUMP_ABILITY):
                 if hass.services.has_service(DOMAIN, svc):
                     hass.services.async_remove(DOMAIN, svc)
             _LOGGER.debug("已移除服务")

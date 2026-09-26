@@ -235,3 +235,42 @@ class TestListModels:
         models = va.list_known_models()
         assert len(models) >= 60
         assert all("modelId" in m for m in models)
+
+
+class TestDumpServiceContract:
+    """诊断服务 dump_ability 的约定（2026-09-26 新增）。"""
+
+    @staticmethod
+    def _src(name: str) -> str:
+        return (_INTEG / name).read_text(encoding="utf-8")
+
+    def test_service_constant_defined(self):
+        s = self._src("__init__.py")
+        assert 'SERVICE_DUMP_ABILITY = "dump_ability"' in s
+
+    def test_service_registered(self):
+        s = self._src("__init__.py")
+        assert "async_register(DOMAIN, SERVICE_DUMP_ABILITY" in s
+
+    def test_service_in_cleanup(self):
+        """卸载时要一并移除。"""
+        s = self._src("__init__.py")
+        m = [ln for ln in s.split("\n") if "for svc in (SERVICE_REFRESH" in ln]
+        assert m, "未找到服务清理列表"
+        assert "SERVICE_DUMP_ABILITY" in m[0]
+
+    def test_services_yaml_has_entry(self):
+        s = self._src("services.yaml")
+        assert "dump_ability:" in s
+        assert "导出车型能力表" in s
+
+    def test_dump_writes_json(self):
+        """handler 要把 dump() 结果写成 JSON。"""
+        s = self._src("__init__.py")
+        assert "lixiang_ability_" in s
+        assert "ab.dump()" in s
+
+    def test_dump_includes_detected_features(self):
+        """导出内容要含 features（便于排查实体缺失）。"""
+        s = self._src("__init__.py")
+        assert 'dump["features_detected"] = feats' in s

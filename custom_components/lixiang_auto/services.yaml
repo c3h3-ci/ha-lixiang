@@ -19,3 +19,17 @@ refresh:
       required: false
       selector:
         text:
+
+dump_ability:
+  name: 导出车型能力表
+  description: >-
+    把当前车型的能力表（来自官方 App 内置的配置，含座椅/温控能力与 45 项功能开关）
+    导出为 JSON 文件，用于排查实体缺失或反馈新车型支持。
+    文件路径：<config>/lixiang_ability_<modelId>.json
+  fields:
+    vin:
+      name: VIN
+      description: 目标车辆 VIN（可选，默认使用配置的车辆）
+      required: false
+      selector:
+        text:
