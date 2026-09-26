@@ -109,39 +109,55 @@ def _seat_level_from_vss(vss: dict, state_key: str) -> int | None:
         return None
 
 
-# (suffix, name, icon, state_key, control_type)
-# (唯一后缀, 名称, 图标, 状态key, controlType, 所属功能)
-# ★ 2026-09-24 整合：在 shinnaluo 的 fan.py 基础上补上二排座椅
-#   （他的原版只含主/副驾；二排是 L6 五座车实际有的）
+# (suffix, name, icon, state_key, control_type, 所属功能, 依赖的能力 tag)
+#
+# ★ 2026-09-26 重构：从「硬编码 9 个座椅」改为「按车型能力表生成」。
+#
+#   第 7 列 ability_tag 是【车型能力表里的 tag】（来自 APK 的 assets/{modelId}.json）:
+#     flSeatSw / frSeatSw / secLSeatSw / secMSeatSw / secRSeatSw
+#     thirdLSeatSw / thirdMSeatHeatSw / thirdRSeatSw
+#
+#   生成规则（vehicle_ability.VehicleAbility.has）:
+#     · tag 未配置  → 不生成（该车型没这个位置）
+#     · tag == 1   → 不生成（明确无硬件）
+#     · tag >= 2   → 生成
+#
+#   ★ 效果：L6/L7（五座）自动不生成三排；L8/L9（六座）自动生成三排。
+#   ★ 无 ability_tag 的项（如通风，能力表只给了加热的 tag）→ 跟随加热的判断。
+#
+# 权威来源：App 的 `jobTypes` 对象（assets/index.vehicle.js，12 个座椅项）
+#   ⚠️ smali 的 MVehicleControlManager 只有 6 个，是子集白名单，别只看它。
 SEAT_FANS = (
+    # ---- 主驾 ----
     ("seat_fl_heat", "主驾座椅加热", "mdi:car-seat-heater",
-     "seat_fl_heat", "flSeatHeatSw", "座椅加热"),
-    ("seat_fr_heat", "副驾座椅加热", "mdi:car-seat-heater",
-     "seat_fr_heat", "frSeatHeatSw", "座椅加热"),
+     "seat_fl_heat", "flSeatHeatSw", "座椅加热", "flSeatSw"),
     ("seat_fl_vent", "主驾座椅通风", "mdi:car-seat-cooler",
-     "seat_fl_vent", "flSeatVentSw", "座椅加热"),
+     "seat_fl_vent", "flSeatVentSw", "座椅加热", "flSeatSw"),
+    # ---- 副驾 ----
+    ("seat_fr_heat", "副驾座椅加热", "mdi:car-seat-heater",
+     "seat_fr_heat", "frSeatHeatSw", "座椅加热", "frSeatSw"),
     ("seat_fr_vent", "副驾座椅通风", "mdi:car-seat-cooler",
-     "seat_fr_vent", "frSeatVentSw", "座椅加热"),
-    # ★ 二排（L6 五座车的二排：左/中/右三个位置）
-    #   ★★ 2026-09-26 更正：这 3 个 controlType 都是【App 就有的】，
-    #      定义在 assets/index.vehicle.js 的 jobTypes 对象里：
-    #        secLSeatHeatSw / secLSeatVentSw / secMSeatHeatSw
-    #        secRSeatHeatSw / secRSeatVentSw
-    #      ⚠️ 之前的注释说"App 里没有、是推测命名" —— 那是错的，
-    #         因为只查了 smali（MVehicleControlManager 里只有 6 个），
-    #         没查 JS bundle（jobTypes 里有 12 个）。
-    #      ★ 权威来源 = JS bundle 的 jobTypes；smali 那份是子集白名单。
+     "seat_fr_vent", "frSeatVentSw", "座椅加热", "frSeatSw"),
+    # ---- 二排左 ----
     ("seat_sl_heat", "二排左座椅加热", "mdi:car-seat-heater",
-     "seat_sl_heat", "secLSeatHeatSw", "二排座椅"),
-    ("seat_sr_heat", "二排右座椅加热", "mdi:car-seat-heater",
-     "seat_sr_heat", "secRSeatHeatSw", "二排座椅"),
-    ("seat_sm_heat", "二排中座椅加热", "mdi:car-seat-heater",
-     "seat_sm_heat", "secMSeatHeatSw", "二排座椅"),
+     "seat_sl_heat", "secLSeatHeatSw", "二排座椅", "secLSeatSw"),
     ("seat_sl_vent", "二排左座椅通风", "mdi:car-seat-cooler",
-     "seat_sl_vent", "secLSeatVentSw", "二排座椅"),
+     "seat_sl_vent", "secLSeatVentSw", "二排座椅", "secLSeatSw"),
+    # ---- 二排中（L6/L7 五座车有；L8/L9 六座车无）----
+    ("seat_sm_heat", "二排中座椅加热", "mdi:car-seat-heater",
+     "seat_sm_heat", "secMSeatHeatSw", "二排座椅", "secMSeatSw"),
+    # ---- 二排右 ----
+    ("seat_sr_heat", "二排右座椅加热", "mdi:car-seat-heater",
+     "seat_sr_heat", "secRSeatHeatSw", "二排座椅", "secRSeatSw"),
     ("seat_sr_vent", "二排右座椅通风", "mdi:car-seat-cooler",
-     "seat_sr_vent", "secRSeatVentSw", "二排座椅"),
-    # 注：App 还有三排 3 个（thirdL/M/RSeatHeatSw），L6 五座车没有 → 不实现
+     "seat_sr_vent", "secRSeatVentSw", "二排座椅", "secRSeatSw"),
+    # ---- 三排（★ L8/L9/MEGA 才有；L6/L7 的能力表 tag=1，自动跳过）----
+    ("seat_tl_heat", "三排左座椅加热", "mdi:car-seat-heater",
+     "seat_tl_heat", "thirdLSeatHeatSw", "三排座椅", "thirdLSeatSw"),
+    ("seat_tm_heat", "三排中座椅加热", "mdi:car-seat-heater",
+     "seat_tm_heat", "thirdMSeatHeatSw", "三排座椅", "thirdMSeatHeatSw"),
+    ("seat_tr_heat", "三排右座椅加热", "mdi:car-seat-heater",
+     "seat_tr_heat", "thirdRSeatHeatSw", "三排座椅", "thirdRSeatSw"),
 )
 
 
@@ -161,17 +177,43 @@ async def async_setup_entry(
     if li_api is None:
         _LOGGER.warning("无密码登录凭据，跳过 fan 实体")
         return
-    # 按车型功能过滤（features 由 __init__.py 探测）
+    # ★ 2026-09-26：按【车型能力表】生成座椅实体（不再硬编码）
+    #
+    #   规则（等价 App 的 getAbilityLeven(tag) > 1）：
+    #     · 有 ability_tag → 用能力表判定该位置是否存在
+    #     · 无 ability_tag → 回退到 features 的粗粒度判断
+    #
+    #   ★ 效果：L6/L7（五座）不生成三排；L8/L9（六座）自动生成三排。
     features = (data.get("features") or {})
+    ability = data.get("ability")
     entities = []
+
     for spec in SEAT_FANS:
-        # spec = (suffix, name, icon, state_key, ctrl_type, feat)
+        # spec = (suffix, name, icon, state_key, ctrl_type, feat, ability_tag)
         feat = spec[5] if len(spec) > 5 else None
-        if feat and not features.get(feat, True):
+        ability_tag = spec[6] if len(spec) > 6 else None
+
+        if ability is not None and getattr(ability, "available", False) and ability_tag:
+            # ① 权威路径：车型能力表
+            if not ability.has(ability_tag):
+                _LOGGER.debug("能力表 %s(%s=%s) 判定无此座椅，跳过 %s",
+                              ability.desc, ability_tag,
+                              ability.ability_level(ability_tag), spec[0])
+                continue
+        elif feat and not features.get(feat, True):
+            # ② 回退：粗粒度功能开关
             _LOGGER.debug("车型不支持 %s，跳过 %s", feat, spec[0])
             continue
+
+        # ★ 只传前 5 个位置参数（构造器签名不变）
         entities.append(LiCarSeatFan(coordinator, li_api, device_info, vin,
                                      *spec[:5]))
+
+    if entities:
+        _LOGGER.info("座椅实体: %d 个%s", len(entities),
+                     f"（能力表 {ability.desc}）"
+                     if ability is not None and getattr(ability, "available", False)
+                     else "")
     async_add_entities(entities)
 
 

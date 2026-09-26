@@ -88,6 +88,12 @@ class TestFanEntityTable:
 
     @staticmethod
     def _fans() -> list[tuple]:
+        """解析 SEAT_FANS 表。
+
+        ★ 2026-09-26：表从 5 列扩展为 7 列
+          (suffix, name, icon, state_key, control_type, feat, ability_tag)
+          这里只取前 5 列以保持既有断言语义。
+        """
         src = _src("fan.py")
         m = re.search(r"SEAT_FANS = \((.*?)\n\)", src, re.S)
         assert m, "未找到 SEAT_FANS"
@@ -95,10 +101,35 @@ class TestFanEntityTable:
             r'\("([^"]+)",\s*"([^"]+)",\s*"([^"]+)",\s*"([^"]+)",\s*"([^"]+)"',
             m.group(1))
 
-    def test_has_nine_seats(self):
-        """★ L6 应有 9 个座椅 fan（主副驾 + 二排左中右）"""
+    @staticmethod
+    def _all_specs() -> list[tuple]:
+        """解析全部 7 列（含 feat / ability_tag）。"""
+        src = _src("fan.py")
+        m = re.search(r"SEAT_FANS = \((.*?)\n\)", src, re.S)
+        assert m, "未找到 SEAT_FANS"
+        return re.findall(
+            r'\("([^"]+)",\s*"([^"]+)",\s*"([^"]+)",\s*"([^"]+)",'
+            r'\s*"([^"]+)",\s*"([^"]+)"(?:,\s*"([^"]+)")?\)',
+            m.group(1))
+
+    def test_table_has_twelve_definitions(self):
+        """★ 2026-09-26：表里有 12 个座椅定义（含三排 3 个）。
+
+        实际生成几个由【车型能力表】决定：
+          L6/L7（五座）→ 9 个（无三排）
+          L8/L9（六座）→ 10 个（有三排左/右，无二排中）
+        """
         fans = self._fans()
-        assert len(fans) == 9, f"应有 9 个，实际 {len(fans)}: {[f[0] for f in fans]}"
+        assert len(fans) == 12, f"应有 12 个定义，实际 {len(fans)}"
+
+    def test_l6_generates_nine_seats(self):
+        """★ L6（五座）按能力表应生成 9 个座椅 fan。"""
+        specs = self._all_specs()
+        # 模拟 L6 的能力表：三排=1（无）
+        l6_absent = {"thirdLSeatSw", "thirdMSeatHeatSw", "thirdRSeatSw"}
+        generated = [sp for sp in specs
+                     if not (len(sp) > 6 and sp[6] and sp[6] in l6_absent)]
+        assert len(generated) == 9, f"L6 应生成 9 个，实际 {len(generated)}"
 
     def test_second_row_has_middle_heat(self):
         """★ 二排中座椅加热（用户实测确认存在）"""
@@ -119,12 +150,26 @@ class TestFanEntityTable:
         """
         fans = self._fans()
         keys = {f[0] for f in fans}
-        expected = {
+        # ★ 2026-09-26：表已扩展为 12 个（含三排），
+        #   这里断言 L6 实际生成的 9 个都在表里
+        expected_l6 = {
             "seat_fl_heat", "seat_fr_heat", "seat_fl_vent", "seat_fr_vent",
             "seat_sl_heat", "seat_sr_heat", "seat_sm_heat",
             "seat_sl_vent", "seat_sr_vent",
         }
-        assert keys == expected, f"座椅实体不符: 缺 {expected - keys}, 多 {keys - expected}"
+        assert expected_l6 <= keys, f"缺少 L6 的座椅: {expected_l6 - keys}"
+
+    def test_third_row_defined_for_l8_l9(self):
+        """★ 三排座椅已定义（供 L8/L9 自动生成）。"""
+        keys = {f[0] for f in self._fans()}
+        for k in ("seat_tl_heat", "seat_tm_heat", "seat_tr_heat"):
+            assert k in keys, f"缺少三排定义: {k}"
+
+    def test_ability_tags_present(self):
+        """★ 每个座椅定义都带能力表 tag（第 7 列）。"""
+        specs = self._all_specs()
+        for sp in specs:
+            assert len(sp) > 6 and sp[6], f"{sp[0]} 缺少 ability_tag"
 
     def test_second_row_control_types_match_app_jobtypes(self):
         """★ 二排 5 个 controlType 都来自 App 的 jobTypes（JS bundle）。

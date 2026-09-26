@@ -111,22 +111,35 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # 车型功能探测（VSS 信号探测法; 失败则全部按不支持处理, 不影响只读实体）
     features: dict[str, bool] = {}
     vehicle_config: dict[str, str] = {}
+    ability = None
     if li_api is not None:
         try:
             from .features import detect_features, read_vehicle_config
+            from .vehicle_ability import get_ability
 
+            # ★ 2026-09-26：先拿车型能力表（读 APK 内置 JSON，与 App 一致）
+            #   各平台用它决定"生成哪些实体"（如 L8/L9 的三排座椅）
+            ability = await hass.async_add_executor_job(get_ability, li_api)
             features = await hass.async_add_executor_job(detect_features, li_api)
             vehicle_config = await hass.async_add_executor_job(
                 read_vehicle_config, li_api)
             _LOGGER.info(
                 "车型功能: 支持=%s",
                 [k for k, v in features.items() if v] or "（探测失败）")
+            if ability is not None and getattr(ability, "available", False):
+                _LOGGER.info(
+                    "车型能力表: %s (modelId=%s, %s, 温区 %s-%s)",
+                    ability.desc, ability.model_id, ability.seat_layout(),
+                    *ability.temp_range())
+            else:
+                _LOGGER.info("车型能力表: 无此车型配置，回退 VSS 探测")
         except Exception as err:  # noqa: BLE001
             _LOGGER.warning("车型功能探测异常（忽略）: %s", err)
 
     hass.data[DOMAIN][entry.entry_id] = {
         "coordinator": coordinator, "client": client, "li_api": li_api,
         "features": features, "vehicle_config": vehicle_config,
+        "ability": ability,
     }
 
     # ★ 注册服务（仅首次）
