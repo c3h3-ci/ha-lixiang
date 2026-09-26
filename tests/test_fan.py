@@ -111,6 +111,49 @@ class TestFanEntityTable:
         assert "seat_sm_vent" not in keys, (
             "不该有 SMSeatVentilationState —— 该信号不存在")
 
+    def test_all_nine_seats_user_verified(self):
+        """★ 2026-09-26 用户实测：「座椅加热都正常」
+
+        9 个座椅实体（主/副 × 加热通风 + 二排左中右）全部可用。
+        其中 3 个用推测 controlType（App 里找不到），实测被服务端接受。
+        """
+        fans = self._fans()
+        keys = {f[0] for f in fans}
+        expected = {
+            "seat_fl_heat", "seat_fr_heat", "seat_fl_vent", "seat_fr_vent",
+            "seat_sl_heat", "seat_sr_heat", "seat_sm_heat",
+            "seat_sl_vent", "seat_sr_vent",
+        }
+        assert keys == expected, f"座椅实体不符: 缺 {expected - keys}, 多 {keys - expected}"
+
+    def test_speculative_control_types_user_verified(self):
+        """★ 3 个推测 controlType 已被用户实测确认可用。
+
+        这些在 App 的常量表里【找不到】：
+          secMSeatHeatSw  ─ App 只有 secL/secR
+          secLSeatVentSw  ─ App 无二排通风
+          secRSeatVentSw  ─ 同上
+        但服务端接受（用户实测"座椅加热都正常"）。
+
+        ⚠️ 改动前必须重新实测 —— 这些不是逆向得出的。
+        """
+        by_key = {f[0]: f[4] for f in self._fans()}
+        speculative = {
+            "seat_sm_heat": "secMSeatHeatSw",
+            "seat_sl_vent": "secLSeatVentSw",
+            "seat_sr_vent": "secRSeatVentSw",
+        }
+        for key, ctrl in speculative.items():
+            assert by_key.get(key) == ctrl, (
+                f"{key} 应为 {ctrl}（实测确认），实际 {by_key.get(key)}")
+
+        # 源码注释里必须有"实测"字样（防止后人误以为是逆向得出的）
+        src = (Path(__file__).resolve().parent.parent
+               / "custom_components" / "lixiang_auto" / "fan.py").read_text()
+        assert "实测确认" in src or "用户实测" in src, (
+            "fan.py 应标注这 3 个 controlType 是【实测确认】的")
+
+
     def test_control_types_match_app(self):
         """controlType 命名规则"""
         fans = self._fans()
