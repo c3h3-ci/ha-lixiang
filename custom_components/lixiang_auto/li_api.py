@@ -156,6 +156,41 @@ class LiApiError(RuntimeError):
     """理想 API 认证/请求错误"""
 
 
+# ---------------------------------------------------------------------------
+# JOB 通道命令判定（2026-09-26）
+# ---------------------------------------------------------------------------
+# 逆向来源：LiveNetControlRouter.resolveRoute()
+#   key 含 "mob.vehCtrlService.vehCtrlJobList" → VEH_CONTROL（HTTP cmd/send）
+#   否则                                       → JOB（LiNdn/NDN）
+#
+# 充电的 destParams = "mob.metaJobService.remoteChargingControl" → 走 JOB。
+# 因此这些 command_key 用 HTTP 发必然 2009。
+_JOB_CHANNEL_COMMANDS = frozenset({
+    # ---- 充电控制（已实测 2009）----
+    "remote_charge_control",          # 启停 / 上限 / 保温 / 预约
+    "remote_charging_start",
+    "remote_charging_stop",
+    "remoteChargingControl",
+    "chargeLimit",
+    # ---- 未实测但有同样特征（destParams 走 metaJob）----
+    "MoveOffAdd",                     # 按时出发
+    "MoveOffModify",
+    "ReserveFridgeData",              # 冰箱预约
+    "sceneModeCtrl",                  # 场景模式
+})
+# ⚠️ 反面例证（这些【不】在列表里，因为实测能用）：
+#   · sentinelModeSetting —— App 走 JOB，但 HTTP cmd/send 也能成功 ✅
+#   · remoteVehSvm        —— 远程拍照，实测能用 ✅
+#   ★ 说明「App 走 JOB」不等于「HTTP 一定不能用」；
+#     只有实测 2009 的才列入。
+
+
+def _is_job_channel_command(command_key: str) -> bool:
+    """判断命令是否走 JOB（LiNdn）通道（HTTP 不支持）。"""
+    key = str(command_key) if command_key is not None else ""
+    return key in _JOB_CHANNEL_COMMANDS
+
+
 class LiCommandError(LiApiError):
     """车控命令执行失败 (含服务端 resultCode / pushState)."""
 
@@ -165,6 +200,23 @@ class LiCommandError(LiApiError):
         self.request_id = request_id
         self.result_code = result_code
         self.push_state = push_state
+
+
+class LiChannelNotSupported(LiCommandError):
+    """命令走【不支持的通道】—— 典型是充电控制。
+
+    ★ 2026-09-26：逆向确认，充电命令走 LiveNetControlRoute.JOB（LiNdn/NDN）通道，
+      而 HTTP cmd/send 只支持 VEH_CONTROL 通道（车门锁/车窗/空调/座椅等）。
+
+      App 的路由规则（LiveNetControlRouter.resolveRoute）：
+        key 含 "mob.vehCtrlService.vehCtrlJobList" → VEH_CONTROL（HTTP）
+        否则                                       → JOB（NDN）
+
+      充电的 destParams = "mob.metaJobService.remoteChargingControl"
+      → 走 JOB → HTTP 通道不执行 → pushState=7 resultCode=2009
+
+    本异常让用户得到【明确提示】，而不是"点了没反应"。
+    """
 
 
 class _TokenExpired(TokenExpired):
@@ -649,6 +701,8 @@ class LiApiClient:
         if not request_id:
             raise LiCommandError(
                 f"命令下发无 requestId ({command_key}): {json.dumps(resp, ensure_ascii=False)[:200]}")
+        # ★ 记录命令信息，供下面的通道检测用
+        self._last_cmd_key = command_key
 
         if not poll:
             return {"requestId": request_id, "cmdKey": command_key,
@@ -676,11 +730,30 @@ class LiApiClient:
                     "车控成功(pushState=7 但 rc=%s 属成功码) %s %s",
                     rc_final, command_key, command_data)
                 return result
+            rc_err = result.get("resultCode")
+            # ★★★ 2026-09-26：resultCode=2009 且是充电命令 → 明确提示"通道不支持"
+            #
+            #   逆向确认：充电走 LiveNetControlRoute.JOB（LiNdn/NDN），
+            #   而 HTTP cmd/send 只支持 VEH_CONTROL 通道。
+            #   给用户明确提示，而不是"点了没反应"。
+            # ⚠️ 服务端可能返回字符串 "2009"（实测），必须容错比较
+            try:
+                _rc_int = int(rc_err) if rc_err is not None else None
+            except (TypeError, ValueError):
+                _rc_int = None
+            if _rc_int == 2009 and _is_job_channel_command(command_key):
+                raise LiChannelNotSupported(
+                    f"「{command_key}」走的是理想 App 的 LiNdn（JOB）通道，"
+                    f"HTTP 车控接口不支持。这是已知限制，"
+                    f"充电相关控制暂不可用（状态读取正常）。"
+                    f"（resultCode={rc_err}）",
+                    request_id=request_id, result_code=rc_err, push_state=ps,
+                )
             raise LiCommandError(
                 f"命令执行失败 ({command_key}): pushState={ps} "
-                f"resultCode={result.get('resultCode')} msg={result.get('resultMsg')}",
+                f"resultCode={rc_err} msg={result.get('resultMsg')}",
                 request_id=request_id,
-                result_code=result.get("resultCode"), push_state=ps,
+                result_code=rc_err, push_state=ps,
             )
         # ★ 超时未终态（2026-09-23 修复）
         #   pushState=1（执行中）时服务端只是没及时置终态，但命令【可能已生效】。
