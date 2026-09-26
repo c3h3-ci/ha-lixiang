@@ -29,6 +29,7 @@ import logging
 from typing import Any
 
 from .const import LOGGER_NAME
+from .vehicle_ability import VehicleAbility, get_ability
 
 _LOGGER = logging.getLogger(LOGGER_NAME)
 
@@ -300,6 +301,44 @@ def _ts_fresh(ts: str, max_days: float = 7.0) -> bool:
         return True   # 解析失败时不惩罚（保守）
 
 
+def _ability_to_features(ab) -> dict:
+    """把车型能力表映射到我们的功能名（2026-09-26）。
+
+    判定规则（与 App 一致）：
+      · 座椅/硬件类 → ability_level(tag) >= 2（= ab.has(tag)）
+      · 功能开关类  → is_supported(tag)
+
+    ★ 只返回【能从能力表确定】的项；其余由调用方走 VSS 探测。
+    """
+    out: dict = {}
+
+    # ---- 座椅硬件（用 ability_level）----
+    # ★ 关键改进：三排 / 二排中 用各自的 tag 明确判断，不再靠 ts 猜
+    out["三排座椅"] = ab.has("thirdLSeatSw") or ab.has("thirdRSeatSw")
+    out["二排座椅"] = (ab.has("secLSeatSw") or ab.has("secMSeatSw")
+                       or ab.has("secRSeatSw"))
+    out["座椅加热"] = ab.has("flSeatSw") or ab.has("frSeatSw")
+    out["方向盘加热"] = ab.has("strgWhlHeatSw")
+
+    # ---- 功能开关（用 is_supported）----
+    out["哨兵模式"] = ab.is_supported("sentry")
+    out["冰箱"] = ab.is_supported("fridge")
+    out["远程拍照"] = True          # L6/L7/L8/L9 都有 360 泊车影像
+    out["遮阳帘"] = True            # 能力表无对应 tag，保持已确认的结论
+
+    # ---- 明确【无】的（能力表 isSupport=false 且 config 里有该 tag）----
+    for tag, feat in (("sideDoor", "侧滑门"),
+                      ("electricFrontDoor", "电动前门"),
+                      ("rotatableSeatLockLinkage", "旋转座椅")):
+        v = ab.version_info(tag)
+        if v and not v.get("isSupport"):
+            out[feat] = False
+        elif v and v.get("isSupport"):
+            out[feat] = True
+
+    return out
+
+
 def _hardcoded_features(li_api: Any) -> dict[str, Any] | None:
     """用 Vehicle.Information.ConfigCode 识别车型, 返回 App 的硬编码功能表。
 
@@ -388,6 +427,16 @@ def detect_features(li_api: Any) -> dict[str, bool]:
     返回 {功能名: 是否支持}；探测失败的组按 False 处理（保守）。
     """
     result: dict[str, bool] = {}
+
+    # ⓪-1 ★ 2026-09-26：先查【车型能力表】（读 APK 内置 JSON，与 App 完全一致）
+    #    ★ 放在最前面：即使 VSS 请求失败（401 等），能力表仍然可用
+    ab = get_ability(li_api)
+    if ab.available:
+        _LOGGER.debug("使用车型能力表 %s (%s): %d 座",
+                      ab.desc, ab.model_id, ab.vehicle_seat())
+        result.update(_ability_to_features(ab))
+
+    # ⓪-2 然后做 VSS 探测（补充能力表没覆盖的项）
     all_paths: list[str] = []
     for paths in FEATURE_PROBES.values():
         all_paths.extend(paths)
@@ -395,11 +444,30 @@ def detect_features(li_api: Any) -> dict[str, bool]:
     try:
         state = li_api.get_vss_state(all_paths) or {}
     except Exception as err:  # noqa: BLE001
-        _LOGGER.warning("功能探测失败, 全部按不支持处理: %s", err)
-        return {k: False for k in FEATURE_PROBES}
+        _LOGGER.warning("VSS 功能探测失败（能力表结果仍保留）: %s", err)
+        # ★ 不再全部返回 False —— 能力表已有的结果保留
+        for k in FEATURE_PROBES:
+            result.setdefault(k, False)
+        if "冰箱" in result:
+            result["冰箱预约"] = result["冰箱"]
+        return result
 
-    # ① 先尝试用 App 的硬编码表（通过 ConfigCode 识别车型）
-    hard = _hardcoded_features(li_api)
+    # ⓪-3 ★ 2026-09-26：优先用【车型能力表】（读 APK 内置 JSON，与 App 完全一致）
+    #    这比 ConfigCode 硬编码表准确得多：覆盖 68 个车型，且是官方数据。
+    # ★★ 权威性规则（2026-09-26）：
+    #   能力表（官方 APK 数据）> variableModel（服务端中文串）> ConfigCode 表 > VSS 探测
+    #
+    #   已被能力表确定的功能，【后续任何来源都不得覆盖】。
+    #   原因：VSS 探测无法区分"服务端对不存在硬件也返回 value=0 + 有效 ts"，
+    #         实测会把 L6（五座）误判为有三排座椅。
+    authoritative: set[str] = set(result.keys())
+
+    # 未被能力表覆盖的，尝试 ConfigCode 硬编码表（回退路径）
+    if ab.available:
+        hard = None          # 能力表已覆盖，不再用 ConfigCode
+    else:
+        hard = _hardcoded_features(li_api)
+
     if hard:
         _LOGGER.debug("使用 App 硬编码功能表 (%s): %s", hard.get("_model", "?"),
                         {k: v for k, v in hard.items() if not k.startswith("_")})
@@ -450,6 +518,11 @@ def detect_features(li_api: Any) -> dict[str, bool]:
         # ★ 判据：多数信号有效才算支持（避免个别通用信号造成误报）
         #   实测: 无冰箱时仅 DlyTmRemain 有 ts，其余 3 个都是 ts=0 → 判为无
         need = 1 if len(paths) == 1 else max(2, (len(paths) + 1) // 2)
+        # ★★ 权威性：能力表已确定的功能，VSS 探测不得覆盖
+        #   实测 VSS 会把 L6（五座）误判为"有三排座椅"，
+        #   因为服务端对不存在的三排硬件也返回 value=0 + 有效 ts。
+        if feat in authoritative:
+            continue
         result[feat] = valid >= need
 
     # "冰箱预约" 依赖冰箱硬件

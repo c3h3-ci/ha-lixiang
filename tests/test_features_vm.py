@@ -16,11 +16,31 @@ from pathlib import Path
 
 
 def _load_features():
-    """加载 features.py（绕过 __init__.py 的 HA 依赖）。"""
-    src = (Path(__file__).resolve().parent.parent
-           / "custom_components" / "lixiang_auto" / "features.py").read_text()
+    """加载 features.py（绕过 __init__.py 的 HA 依赖）。
+
+    ★ 2026-09-26：features.py 现在 import 了 vehicle_ability，
+      需要一并注入（先加载 vehicle_ability，再作为模块属性提供给 features）。
+    """
+    integ = (Path(__file__).resolve().parent.parent
+             / "custom_components" / "lixiang_auto")
+
+    # ① 先加载 vehicle_ability（注入到 sys.modules 的一个假包里）
+    va_src = (integ / "vehicle_ability.py").read_text(encoding="utf-8")
+    va_src = va_src.replace("from .const import LOGGER_NAME", "LOGGER_NAME = 'test'")
+    va_src = va_src.replace(
+        '_CONFIG_DIR = Path(__file__).parent / "vehicle_configs"',
+        f'_CONFIG_DIR = Path({str(integ / "vehicle_configs")!r})')
+    va_mod = types.ModuleType("va_for_features")
+    exec(compile(va_src, "vehicle_ability.py", "exec"), va_mod.__dict__)
+
+    # ② 加载 features.py，把 relative import 换成对 va_mod 的直接引用
+    src = (integ / "features.py").read_text(encoding="utf-8")
     src = src.replace("from .const import LOGGER_NAME", "LOGGER_NAME = 'test'")
+    src = src.replace(
+        "from .vehicle_ability import VehicleAbility, get_ability",
+        "VehicleAbility = _VA_MOD.VehicleAbility\nget_ability = _VA_MOD.get_ability")
     mod = types.ModuleType("feat_test")
+    mod.__dict__["_VA_MOD"] = va_mod
     exec(compile(src, "features.py", "exec"), mod.__dict__)
     return mod
 
