@@ -145,3 +145,69 @@ class TestKnownFeaturesIsFallbackOnly:
         # 能力表可用时应跳过硬编码表
         assert "if ab.available:" in s
         assert "hard = None" in s
+
+
+class TestVatScopeMatchesApp:
+    """★ VAT scope 必须与 App 的 subTokenData 完全一致（2026-09-26）。
+
+    重大修正：之前我们自己拼了 14 个 scope（含 cpCtrl/ssCtrl/ChargingControl），
+    实测服务端会【整批降级】，只授权 8 个（丢掉 fTkC/rmCtrl/ADCtrl/ADInit）。
+
+    权威来源：APK 内置 assets/m01config.json → code="app" → subTokenData
+             里 type="VAT_1" 的 scope（精确 12 个）。
+
+    实测：用精确 12 个 → 服务端授权全部 12 个 ✅
+    """
+
+    # App 的 VAT_1 scope（从 m01config.json 提取，权威）
+    APP_VAT1 = (
+        "remoteVehACSmartControl", "remoteVehFrgControl", "remoteVehAuth",
+        "remoteVehLockControl", "remoteVehPlgControl", "remoteVehSearch",
+        "remoteVehWdwControl", "remoteVehACFirstControl",
+        "remoteADCtrl", "remoteADInit", "fTkC", "rmCtrl",
+    )
+
+    @staticmethod
+    def _scope_tuple() -> tuple[str, ...]:
+        """从 li_api.py 解析 VAT_SCOPE_COMMANDS。"""
+        import ast
+        src = (_INTEG / "li_api.py").read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Assign)
+                    and any(getattr(t, "id", "") == "VAT_SCOPE_COMMANDS"
+                            for t in node.targets)):
+                return tuple(ast.literal_eval(node.value))
+        raise AssertionError("未找到 VAT_SCOPE_COMMANDS")
+
+    def test_matches_app_exactly(self):
+        """★ 必须与 App 的 VAT_1 完全一致（顺序无所谓）。"""
+        ours = set(self._scope_tuple())
+        app = set(self.APP_VAT1)
+        assert ours == app, (
+            f"scope 不一致\n  我们多的: {ours - app}\n  我们缺的: {app - ours}")
+
+    def test_no_bogus_charging_scope(self):
+        """★ 不得有 ChargingControl（App 里不存在，会让服务端降级）。"""
+        ours = self._scope_tuple()
+        assert "ChargingControl" not in ours
+        assert not any("Charg" in s for s in ours), "充电没有独立 scope"
+
+    def test_no_vat_prefix_duplication(self):
+        """★ 名字已含前缀，不得双写 remoteVeh。"""
+        for s in self._scope_tuple():
+            assert "remoteVehremoteVeh" not in s
+            assert not s.startswith("remoteVehremote"), f"{s} 前缀重复"
+
+    def test_scope_count_is_12(self):
+        assert len(self._scope_tuple()) == 12
+
+    def test_vat_scope_format(self):
+        """vat_scope() 只加 :VIN（名字已含 remoteVeh 前缀）。"""
+        src = (_INTEG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("def vat_scope")
+        assert i > 0, "未找到 vat_scope"
+        blk = src[i:i + 400]
+        assert 'f"{c}:{vin}"' in blk, "vat_scope 可能重复加前缀"
+        # ★ 不得再写 f"remoteVeh{c}:{vin}"
+        assert 'f"remoteVeh{c}' not in blk, "前缀重复了"

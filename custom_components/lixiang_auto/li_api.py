@@ -61,17 +61,28 @@ AUD_MESH = "1j0vgTqagJUHuT6nLmbTGx"
 SCOPE_MESH = "remote-wakeup:wakeup veh-ctrl:cmd-send veh-ctrl:cmd-result-get"
 AUD_VAT = "5Tc7yDrnMzALwc9Rytl9sp"
 
-# VAT scope 必须以 remoteVeh<Cmd>:<VIN> 形式逐条列出 (14 条)
+# VAT scope
+#
+# ★★ 2026-09-26 重大修正：
+#   之前我们自己拼了 14 个（含 cpCtrl / ssCtrl / ChargingControl）—— 那是错的！
+#   实测：多请求 App 没有的 scope 会让服务端【整批降级】，只授权 8 个
+#        （丢掉 fTkC / rmCtrl / ADCtrl / ADInit）。
+#
+#   权威来源：APK 内置 assets/m01config.json → code="app" → subTokenData
+#             里 type="VAT_1" 的 scope（精确 12 个，含 remoteVeh 前缀）
+#
+#   实测对比（2026-09-26）：
+#     · 我们拼的 14 个 → 服务端只给 8 个   ❌
+#     · App 的 12 个   → 服务端给全部 12 个 ✅
+#
+# ⚠️ 名字已含完整前缀，vat_scope() 只加 ":<VIN>" 后缀。
+# ⚠️ 充电没有独立 scope（subTokenData 40 项里搜不到 cpCtrl/Charging*）——
+#    充电走 JOB（NDN）路由，与 scope 无关。
 VAT_SCOPE_COMMANDS = (
-    "ACSmartControl", "FrgControl", "Auth", "LockControl", "PlgControl",
-    "Search", "WdwControl", "ACFirstControl", "ADCtrl", "ADInit",
-    "fTkC", "rmCtrl", "cpCtrl", "ssCtrl",
-    # ★ 2026-09-24 新增（用户反馈 + 实测打通）：
-    #   充电启停需要这个 scope。不加 → remote_charge_control 返回 2009。
-    #   依据：App 的 jobService = 'mob.metaJobService.remoteChargingControl'
-    #        → VAT scope 名 = remoteVeh + "ChargingControl"
-    #   实测：加入后 pushState/resultCode 不再报错，返回 requestId。
-    "ChargingControl",
+    "remoteVehACSmartControl", "remoteVehFrgControl", "remoteVehAuth",
+    "remoteVehLockControl", "remoteVehPlgControl", "remoteVehSearch",
+    "remoteVehWdwControl", "remoteVehACFirstControl",
+    "remoteADCtrl", "remoteADInit", "fTkC", "rmCtrl",
 )
 
 # 车控端点
@@ -133,8 +144,12 @@ EMPTY_MD5 = "1B2M2Y8AsgTpgAmY7PhCfg=="
 
 
 def vat_scope(vin: str) -> str:
-    """构造 VAT scope: remoteVeh<Cmd>:<VIN> × 14."""
-    return " ".join(f"remoteVeh{c}:{vin}" for c in VAT_SCOPE_COMMANDS)
+    """构造 VAT scope。
+
+    ★ 2026-09-26：VAT_SCOPE_COMMANDS 里【已含完整 scope 名】
+      （如 "remoteVehACSmartControl"），所以这里只加 :VIN 后缀。
+    """
+    return " ".join(f"{c}:{vin}" for c in VAT_SCOPE_COMMANDS)
 
 
 class LiApiError(RuntimeError):
