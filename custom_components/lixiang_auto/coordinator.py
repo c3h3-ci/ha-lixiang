@@ -266,8 +266,22 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
             # ③ 在线（或未知）→ 完整轮询（三档分频）
             import time as _t
             now = _t.monotonic()
-            need_mid = (now - self._mid_freq_ts.get(self._rid(), 0.0)) > self.MID_FREQ_INTERVAL
-            need_low = (now - self._low_freq_ts.get(self._rid(), 0.0)) > self.LOW_FREQ_INTERVAL
+            # ★★ 2026-09-26 修复「首次永不拉取低频信号」的 bug
+            #
+            #   bug：原实现用 `now - self._xxx_ts.get(rid, 0.0)` 判断是否需要拉取。
+            #        首次时 dict 为空 → get 返回 0.0 → 差值 = now = time.monotonic()，
+            #        即【容器/进程的运行时长】。
+            #        LOW_FREQ_INTERVAL = 24h = 86400s，
+            #        所以只要 HA 进程启动不到 24 小时，need_low 恒为 False，
+            #        低频信号（车辆授权/OTA/保养等 23 个）【在首个 24 小时内永不拉取】，
+            #        对应实体一直显示 unknown。
+            #
+            #   修法：首次（cache 里没有该 rid 的时间戳）强制拉取。
+            #        既修了 LOW，也顺带保证 MID 首轮就有数据。
+            _mid_ts = self._mid_freq_ts.get(self._rid())
+            _low_ts = self._low_freq_ts.get(self._rid())
+            need_mid = _mid_ts is None or (now - _mid_ts) > self.MID_FREQ_INTERVAL
+            need_low = _low_ts is None or (now - _low_ts) > self.LOW_FREQ_INTERVAL
 
             # ★ 2026-09-24 接入 signals.py（架构方案 2.3）
             #   从「前缀匹配」改为「读 spec.freq」——
