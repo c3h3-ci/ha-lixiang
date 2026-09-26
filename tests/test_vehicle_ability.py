@@ -274,3 +274,53 @@ class TestDumpServiceContract:
         """导出内容要含 features（便于排查实体缺失）。"""
         s = self._src("__init__.py")
         assert 'dump["features_detected"] = feats' in s
+
+
+class TestAppNames:
+    """实体名对齐 App（2026-09-26 新增）。"""
+
+    def test_names_file_exists(self):
+        assert (_CONFIG_DIR / "_names_app.json").is_file()
+
+    def test_app_name_lookup(self):
+        """名字应来自 App（如「车锁」而非我们自造的「车门锁」）。"""
+        assert va.app_name("lock") == "车锁"
+        assert va.app_name("window") == "车窗"
+        assert va.app_name("door_trunk") == "尾门"
+        assert va.app_name("driving_auth") == "授权驾驶"
+        assert va.app_name("find_car") == "寻车"
+
+    def test_app_name_english(self):
+        assert va.app_name("lock", "en") == "Lock"
+        assert va.app_name("window", "en") == "Windows"
+        assert va.app_name("door_trunk", "en") == "Tailgate"
+
+    def test_app_name_fallback(self):
+        """未知 key 返回 default 或 key 本身（不崩）。"""
+        assert va.app_name("nonexistent", default="X") == "X"
+        assert va.app_name("nonexistent") == "nonexistent"
+
+    def test_seat_names_present(self):
+        for k in ("seat_fl_heat", "seat_sm_heat", "seat_tl_heat", "seat_tr_heat"):
+            v = va.app_name(k)
+            assert v and v != k, f"{k} 缺名字"
+
+    def test_fast_cool_hot_match_app(self):
+        """App 用「快速制冷/制热」（res/values strings fast_cold/fast_hot）。"""
+        assert va.app_name("fast_cool") == "快速制冷"
+        assert va.app_name("fast_hot") == "快速制热"
+        assert va.app_name("deicing") == "除雪除冰"
+
+    def test_all_entries_have_source(self):
+        """每条都要标明来源（可追溯）。"""
+        raw = json.loads((_CONFIG_DIR / "_names_app.json").read_text(encoding="utf-8"))
+        for k, v in raw.items():
+            if k.startswith("_"):
+                continue
+            assert v.get("source"), f"{k} 缺 source"
+            assert v.get("zh"), f"{k} 缺 zh"
+
+    def test_lock_py_uses_app_name(self):
+        """lock.py 应从 app_name 取名（而不是硬编码）。"""
+        s = (_INTEG / "lock.py").read_text(encoding="utf-8")
+        assert 'app_name("lock"' in s

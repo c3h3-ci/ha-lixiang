@@ -355,6 +355,41 @@ class VehicleAbility:
         }
 
 
+@lru_cache(maxsize=1)
+def load_app_names() -> dict[str, dict[str, str]]:
+    """实体名对齐表（key → {zh, en, source}）。
+
+    ★ 名字取自官方 App（APK 的 I18N 与 res/values/strings.xml），
+      保证我们的实体名与 App 的叫法一致。
+    """
+    f = _CONFIG_DIR / "_names_app.json"
+    if not f.exists():
+        return {}
+    try:
+        raw = json.loads(f.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return {}
+    return {k: v for k, v in raw.items() if not k.startswith("_")}
+
+
+def app_name(key: str, lang: str = "zh", default: str = "") -> str:
+    """按 App 的官方叫法取实体名。
+
+    参数:
+        key:     我们的实体 key（如 "lock" / "seat_sl_heat"）
+        lang:    "zh" 或 "en"
+        default: 查不到时的回退值
+
+    用法:
+        name = app_name("lock")            # → "车锁"（App 就叫这个）
+        name = app_name("lock", "en")      # → "Lock"
+    """
+    entry = load_app_names().get(key)
+    if not entry:
+        return default or key
+    return entry.get(lang) or entry.get("zh") or default or key
+
+
 def get_ability(li_api: Any, model_id: str | None = None) -> VehicleAbility:
     """便利函数：拿到当前车的 VehicleAbility。
 

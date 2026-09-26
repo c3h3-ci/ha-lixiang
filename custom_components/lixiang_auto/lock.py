@@ -60,7 +60,15 @@ class LiCarDoorLock(CoordinatorEntity, LockEntity):
     """理想车门锁（真车控）."""
 
     _attr_has_entity_name = True
-    _attr_name = "车门锁"
+    # ★ 2026-09-26：名字对齐 App（App 叫「车锁」，见 vehicle_control_car_lock）
+    @property
+    def name(self) -> str:
+        """实体名（取自 App 官方叫法）。"""
+        try:
+            from .vehicle_ability import app_name
+            return app_name("lock", default="车锁")
+        except Exception:  # noqa: BLE001
+            return "车锁"
     _attr_icon = "mdi:car-door-lock"
 
     def __init__(self, coordinator, li_api, device_info, vin: str) -> None:
