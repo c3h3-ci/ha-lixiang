@@ -646,41 +646,66 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         _LOGGER.info("登录成功: 手机号=****%s vin=%s device=%s",
                      phone[-4:], vin or "(空)", str(data.get(CONF_DEVICE_ID))[-8:])
-        # ★ 2026-09-26：title 用车型名（多车用户更清楚），取不到则用手机号
-        _vname = self._resolve_vehicle_name(data)
+        # ★ 2026-09-26：title = 车型 + 车牌（多车账号也能分清）
         return self.async_create_entry(
-            title=(f"{_vname} ({phone[-4:]})" if _vname
-                   else f"Li Auto ({phone[-4:]})"),
+            title=self._entry_title(data),
             data=data,
         )
 
-    def _resolve_vehicle_name(self, data: dict[str, Any]) -> str:
-        """取车辆显示名（用于 config entry 的 title）。
+    def _entry_title(self, data: dict[str, Any]) -> str:
+        """生成 config entry 的 title。
 
-        ★ 2026-09-26：title 从「Li Auto (1820)」改为车型名（如「理想L6 Pro」），
-          这样多车/多车型用户一眼能分清。
-          数据源与 device.py 一致：vehicleInfo.spu → vehicleNickname → modelName。
+        ★ 2026-09-26 修正（用户指出）：
+          一个账号下可能有【多辆车】，每个 entry 对应「账号 + 一辆车」。
+          title 必须能区分【这一条 entry 是哪辆车】。
+
+        规则（按 VIN 精确匹配，不能盲取第一辆）：
+            ① 「车型 + 车牌」   → "理想L6 Pro 浙CFS3517"   ← 最清晰
+            ② 「车型 + 手机号」 → "理想L6 Pro (1820)"       ← 无车牌
+            ③ 「Li Auto (手机号)」                          ← 取不到车型
         """
-        from .device import vehicle_names
         from .li_api import LiApiClient
 
+        phone = data.get(CONF_PHONE) or ""
+        vin = (data.get(CONF_VIN) or "").strip().upper()
+        suffix = phone[-4:]
+
+        vname = plate = ""
         try:
             api = LiApiClient(
-                phone=data.get(CONF_PHONE) or "",
+                phone=phone,
                 password=data.get(CONF_PASSWORD) or "",
-                vin=data.get(CONF_VIN) or "",
+                vin=vin,
                 hac_key=data.get(CONF_HAC_KEY) or DEFAULT_HAC_KEY,
                 key_id=data.get(CONF_KEY_ID) or DEFAULT_KEY_ID,
                 xdev=data.get(CONF_XDEV) or DEFAULT_XDEV,
                 app_token=data.get(CONF_APP_TOKEN) or DEFAULT_APP_TOKEN,
                 device_id=data.get(CONF_DEVICE_ID) or DEFAULT_DEVICE_ID,
             )
-            names = vehicle_names(api)
-            if names.get("zh"):
-                return names["zh"]
+            vehs = api.get_vehicles() or []
+            # ★ 按 VIN 精确匹配（多车账号不能盲取 [0]）
+            target = None
+            for v in vehs:
+                if (v.get("vin") or "").upper() == vin:
+                    target = v
+                    break
+            if target is None and len(vehs) == 1:
+                target = vehs[0]          # 只有一辆 → 用它（VIN 可能没填）
+            if target is not None:
+                info = target.get("vehicleInfo") or {}
+                vname = (info.get("spu")
+                         or info.get("vehicleNickname")
+                         or target.get("modelName")
+                         or "")
+                plate = (info.get("plateNumber") or "").strip()
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("取车型名失败（title 用手机号兜底）: %s", err)
-        return ""
+
+        if vname and plate:
+            return f"{vname} {plate}"
+        if vname:
+            return f"{vname} ({suffix})" if suffix else vname
+        return f"Li Auto ({suffix})" if suffix else "Li Auto"
 
     def _resolve_vin(self, data: dict[str, Any]) -> str:
         """用 li_api.get_vehicles() 拉取账号名下的车辆，返回第一辆的 VIN。
@@ -756,11 +781,9 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             await self.async_set_unique_id(user_input[CONF_PHONE])
             self._abort_if_unique_id_configured()
-            # ★ 用车型名（取不到则用手机号）
-            _vname2 = self._resolve_vehicle_name(user_input)
+            # ★ title = 车型 + 车牌（多车账号也能分清）
             return self.async_create_entry(
-                title=(f"{_vname2} ({user_input[CONF_PHONE][-4:]})" if _vname2
-                       else f"Li Auto ({user_input[CONF_PHONE][-4:]})"),
+                title=self._entry_title(user_input),
                 data=user_input,
             )
         return self.async_show_form(

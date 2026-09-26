@@ -108,7 +108,8 @@ def _split_series_trim(name: str) -> tuple[str, str]:
 
 
 def vehicle_names(li_api: Any, ability: Any = None,
-                 cached: dict | None = None) -> dict[str, str]:
+                 cached: dict | None = None,
+                 vin: str = "") -> dict[str, str]:
     """从服务端取车辆显示名。
 
     ★ 2026-09-26：优先用 `cached`（coordinator.data 里已取好的），
@@ -123,15 +124,26 @@ def vehicle_names(li_api: Any, ability: Any = None,
             "en": cached.get("en", ""),
             "model": cached.get("model") or cached.get("zh", ""),
             "spu": cached.get("spu", ""),
+            "plate": cached.get("plate", ""),
         }
 
-    zh = en = model = spu = ""
+    zh = en = model = spu = plate = ""
 
     # ① 优先：服务端 vehicleNickname
     try:
         veh = (li_api.get_vehicles() or []) if li_api is not None else []
-        if veh:
-            v = veh[0]
+        # ★ 2026-09-26：按 VIN 精确匹配（一个账号可能有多辆车！）
+        #   盲取 veh[0] 会让第二辆车的 entry 显示成第一辆的名字。
+        v = None
+        if vin:
+            want = vin.strip().upper()
+            for cand in veh:
+                if (cand.get("vin") or "").upper() == want:
+                    v = cand
+                    break
+        if v is None and len(veh) == 1:
+            v = veh[0]              # 只有一辆 → 可用（VIN 可能没填）
+        if v is not None:
             info = v.get("vehicleInfo") or {}
             spu = info.get("spu") or ""
             zh = (info.get("vehicleNickname")
@@ -142,6 +154,7 @@ def vehicle_names(li_api: Any, ability: Any = None,
             if spu:
                 zh = spu
             model = v.get("modelName") or zh
+            plate = (info.get("plateNumber") or "").strip()
     except Exception as err:  # noqa: BLE001
         _LOGGER.debug("读车辆名失败（将回退）: %s", err)
 
@@ -166,6 +179,7 @@ def vehicle_names(li_api: Any, ability: Any = None,
         "en": en or "",
         "model": model or zh or "理想汽车",
         "spu": spu,
+        "plate": plate,
     }
 
 
@@ -187,7 +201,7 @@ def build_device_info(coordinator: Any, entry: Any, li_api: Any,
 
     # ★ 优先用 coordinator.data 里缓存的名字（__init__ 已在 executor 里取好）
     cached = cached_vehicle_name(coordinator)
-    names = vehicle_names(li_api, ability, cached=cached)
+    names = vehicle_names(li_api, ability, cached=cached, vin=vin)
     # ★ 名字策略（与 App 一致）：
     #   name  = 服务端昵称（vehicleNickname / spu）
     #   model = 车型（modelName）

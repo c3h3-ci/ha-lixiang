@@ -187,3 +187,90 @@ class TestBuildDeviceInfo:
 
         di = dev.build_device_info(None, Entry(), None)
         assert di["name"] == "理想汽车"
+
+
+class TestMultiVehicleAccount:
+    """★ 多车账号（用户指出的问题）。
+
+    一个账号下可能有【多辆车】，每个 config entry 对应「账号 + 一辆车」。
+    绝不能盲取 get_vehicles()[0] —— 那会让第二辆车的 entry 显示成第一辆。
+    """
+
+    VEHICLES = [
+        {"vin": "TESTVIN000000001015", "modelName": "理想L6",
+         "vehicleInfo": {"spu": "理想L6 Pro", "plateNumber": "浙A00001"}},
+        {"vin": "TESTVIN000000009999", "modelName": "理想L9",
+         "vehicleInfo": {"spu": "理想L9 Max", "plateNumber": "京B00002"}},
+    ]
+
+    class _Api:
+        def __init__(self, vehs):
+            self._v = vehs
+
+        def get_vehicles(self):
+            return self._v
+
+    def test_matches_by_vin_first(self):
+        n = dev.vehicle_names(self._Api(self.VEHICLES),
+                              vin="TESTVIN000000001015")
+        assert n["zh"] == "理想L6 Pro"
+        assert n["plate"] == "浙A00001"
+
+    def test_matches_by_vin_second(self):
+        """★ 第二辆车不能显示成第一辆。"""
+        n = dev.vehicle_names(self._Api(self.VEHICLES),
+                              vin="TESTVIN000000009999")
+        assert n["zh"] == "理想L9 Max", "第二辆车被串成了第一辆！"
+        assert n["plate"] == "京B00002"
+
+    def test_no_blind_first_pick_when_multi(self):
+        """VIN 不匹配 + 多辆车 → 不盲取第一辆，应兜底。"""
+        n = dev.vehicle_names(self._Api(self.VEHICLES), vin="TESTVIN_NOPE")
+        assert n["zh"] == "理想汽车", "多车时不该盲取第一辆"
+
+    def test_single_vehicle_ok_without_vin(self):
+        """只有一辆车时，VIN 缺失也可用（兼容旧 entry）。"""
+        one = [self.VEHICLES[0]]
+        n = dev.vehicle_names(self._Api(one), vin="")
+        assert n["zh"] == "理想L6 Pro"
+
+    def test_cached_respects_vin(self):
+        """缓存应带 plate（title 需要）。"""
+        n = dev.vehicle_names(None, cached={
+            "zh": "理想L8 Ultra", "en": "L8 Ultra",
+            "model": "理想L8", "spu": "", "plate": "沪C00003"})
+        assert n["plate"] == "沪C00003"
+
+
+class TestEntryTitle:
+    """config entry 的 title 生成（config_flow._entry_title）。"""
+
+    @staticmethod
+    def _src() -> str:
+        return (_INTEG / "config_flow.py").read_text(encoding="utf-8")
+
+    def test_uses_entry_title_helper(self):
+        s = self._src()
+        assert "_entry_title" in s
+
+    def test_matches_by_vin_not_index(self):
+        """★ 必须按 VIN 匹配，不能盲取 [0]。"""
+        s = self._src()
+        i = s.find("def _entry_title")
+        blk = s[i:i + 3000]
+        assert 'v.get("vin")' in blk or "target" in blk, "未按 VIN 匹配"
+        assert "for v in vehs" in blk or "for cand in" in blk
+
+    def test_includes_plate(self):
+        """title 应包含车牌（多车区分的最佳标识）。"""
+        s = self._src()
+        i = s.find("def _entry_title")
+        blk = s[i:i + 3000]
+        assert "plateNumber" in blk
+        assert "f\"{vname} {plate}\"" in blk or "{vname} {plate}" in blk
+
+    def test_fallback_to_phone(self):
+        s = self._src()
+        i = s.find("def _entry_title")
+        blk = s[i:i + 3000]
+        assert "Li Auto ({suffix})" in blk

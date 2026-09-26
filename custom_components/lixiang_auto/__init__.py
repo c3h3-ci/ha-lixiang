@@ -127,26 +127,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # ★ 2026-09-26：车辆显示名（服务端 vehicleNickname / spu）
             #   在 executor 里取一次，缓存到 coordinator.data，
             #   各平台的 build_device_info 直接读缓存（零网络、不阻塞事件循环）
+            #    ★ 传本 entry 的 VIN（多车账号必须按 VIN 匹配，不能盲取第一辆）
             from .device import vehicle_names as _veh_names
             _names = await hass.async_add_executor_job(
-                _veh_names, li_api, ability)
+                _veh_names, li_api, ability, None,
+                entry.data.get(CONF_VIN) or "")
             if coordinator.data is None:
                 coordinator.data = {}
             coordinator.data["vehicle_name_info"] = _names
             _LOGGER.info("车辆显示名: %s (%s)", _names.get("zh"), _names.get("en"))
-
-            # ★ 2026-09-26：把 config entry 的 title 也更新成车型名
-            #   （旧版本硬编码 "Li Auto (1820)"，升级后老用户仍是旧 title）
-            #   仅在「当前 title 不含车型名」时更新，避免每次启动都写存储。
-            _vname = _names.get("zh") or ""
-            if _vname and _vname not in (entry.title or ""):
-                _suffix = (entry.data.get(CONF_PHONE) or "")[-4:]
-                _new_title = (f"{_vname} ({_suffix})" if _suffix
-                              else _vname)
-                hass.config_entries.async_update_entry(
-                    entry, title=_new_title)
-                _LOGGER.info("已更新条目名: %s → %s",
-                             entry.title, _new_title)
             features = await hass.async_add_executor_job(detect_features, li_api)
             vehicle_config = await hass.async_add_executor_job(
                 read_vehicle_config, li_api)

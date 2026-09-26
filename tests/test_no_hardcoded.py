@@ -84,11 +84,14 @@ class TestDeviceNameIsDynamic:
         s = (_INTEG / f"{name}.py").read_text(encoding="utf-8")
         assert "build_device_info(" in s, f"{name}.py 未用统一设备构造"
 
-    def test_config_flow_title_uses_vehicle_name(self):
-        """config entry 的 title 应用车型名（而不是只写 Li Auto）。"""
+    def test_config_flow_title_uses_entry_title(self):
+        """config entry 的 title 应用 _entry_title（车型+车牌，多车可区分）。"""
         s = (_INTEG / "config_flow.py").read_text(encoding="utf-8")
-        assert "_resolve_vehicle_name" in s
-        assert "vehicle_names" in s
+        assert "_entry_title" in s
+        # ★ 且必须按 VIN 匹配（用户指出：多车账号不能盲取第一辆）
+        i = s.find("def _entry_title")
+        blk = s[i:i + 3000]
+        assert 'get("vin")' in blk, "未按 VIN 匹配车辆"
 
 
 class TestNoSecrets:
