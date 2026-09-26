@@ -69,6 +69,30 @@
 > 
 > **✅ 这些功能的 sensor 全部正常**，可以只看不用改。
 > 
+> #### 🔍 为什么走不了 HTTP（2026-09-26 精确逆向）
+> 
+> App 的路由规则（`LiveNetControlRouter.resolveRoute()`）：
+> 
+> ```kotlin
+> if (key.contains("mob.vehCtrlService.vehCtrlJobList"))
+>     VEH_CONTROL     // ← 走 HTTP cmd/send（我们能实现）
+> else
+>     JOB             // ← 走 LiNdn（NDN），HTTP 不执行
+> ```
+> 
+> 充电的 `destParams = "mob.metaJobService.remoteChargingControl"`
+> 不含 `vehCtrlJobList` → **走 JOB → HTTP 发不出去**（服务端返回
+> `pushState=7 resultCode=2009`）。
+> 
+> **我们已确认参数全对**（cmdKey / cmdData / expire / jobExpire / token），
+> 只是**通道不对**。所以不是"没逆向好"，是 HTTP 通道根本不支持。
+> 
+> ★ **现在点充电开关会得到明确提示**（不再静默失败）：
+> > 「remote_charge_control」走的是理想 App 的 LiNdn（JOB）通道，
+> > HTTP 车控接口不支持。这是已知限制，充电相关控制暂不可用。
+> 
+> **完整分析**：[docs/充电控制完整破解_20260926.md](docs/充电控制完整破解_20260926.md)
+> 
 > ### 反馈
 >
 > 遇到问题请提 [Issue](https://github.com/c3h3-ci/ha-lixiang/issues)，

@@ -6,46 +6,46 @@
 
 ## [Unreleased]
 
-### Added — 🎯 车型能力表（数据驱动，替代手工硬编码）
+### Added — 🎯 车型能力表 / 配置表 / 多车支持（2026-09-26 大批量改进）
 
-**背景**：App 能按车型自动匹配功能，我们却在手工一个个找。
-根因：App 的能力表来自 **APK 内置的 `assets/{modelId}.json`**。
-
-- **`vehicle_configs/`**（68 个车型，1.1 MB）—— 从官方 APK 8.27.0 提取
-  - `temp.config` → 9 种座椅/温控能力（`value`: 1=无硬件，>=2=有）
-  - `temp.other` → `vehicleSeat` / `minTemp` / `maxTemp`
+#### 车型能力表（数据驱动）
+- **`vehicle_configs/`**（68 个车型 JSON）—— 从官方 APK 提取
+  - `temp.config` → 9 种座椅/温控能力（`value`: 1=无，>=2=有）
   - `version` → 45 种功能开关（`isSupport` + `supportVersion`）
-  - `_index.json` / `_names_zh.json` → 索引与中文名
-- **`vehicle_ability.py`** —— 完全复刻 App 的 `VehicleDetails` 机制
-  - `load_vehicle_config()` = `getVehicleConfig(modelId)`
-  - `ability_level()` = `getAbilityLeven(tag)`
-  - `vehicle_seat()` = `vehicleSeat()`
-  - `is_supported()` = `isSupportCheck(tag, appVer)`
-- **`features.py`** —— 能力表接入 + **权威性规则**
-  - 优先级：能力表 > variableModel > ConfigCode > VSS 探测
-  - 能力表放在最前（VSS 401 时仍可用）
+- **`vehicle_ability.py`** —— 复刻 App 的 `VehicleDetails` 机制
+  - `ability_level()` / `vehicle_seat()` / `is_supported()` / `app_name()`
+- **L8/L9 三排座椅自动支持**（L6 五座自动不建三排）
+
+#### App 配置表（权威来源）
+- **`app_config/sub_token_data.json`**（40 个 token 配置）
+  - 每个接口的 type/audience/scope/urls
+- **`app_config.py`** —— `audience_for(path)` 等反查 API
+
+#### 多车账号支持
+- **config entry title** = 账号级（`Li Auto (1820)`）
+- **device name** = 车辆级（`理想L6 Pro`）
+  - 用户自定义昵称优先
+  - 同款多辆时加车牌 / VIN 尾号区分
+- **按 VIN 精确匹配**（不再盲取第一辆）
+
+#### 诊断
+- **`lixiang_auto.dump_ability`** 服务（导出车型能力表 JSON）
 
 ### Fixed
-- **L6 被误判为「有三排座椅」** —— VSS 探测无法区分"服务端对不存在硬件
-  也返回 value=0 + 有效 ts"，现由能力表权威确定。
+- **设备名硬编码「理想 L6」** —— L8/L9 用户会看到错误车型（严重）
+- **低频信号首次不拉取** —— 23 个实体长期 unknown
+  （`need_low = (now - 0.0) > 24h` 在进程启动 <24h 时恒 False）
+- **VAT scope 多请求导致整批降级** —— 14 个自拼 → 只给 8 个
+  （改为 App 的精确 12 个 → 全给）
+- **L6 被误判为「有三排座椅」** —— VSS 探测无法区分，改由能力表权威确定
+- **充电控制静默失败** —— 现在给出明确提示（LiNdn 通道限制）
+- **实体名对齐 App** —— 「车门锁」→「车锁」
 
 ### Tests
-- 新增 `tests/test_vehicle_ability.py`（35 个）
-- 全量 **256** 个测试通过（原 221）
-
-### 实测（L6Pro）
-| 项 | 结果 |
-|---|---|
-| 车型 | L6Pro (L6)，五座，温区 16–28 |
-| 有三排座椅 | ❌ |
-| 有冰箱 / 侧滑门 / 旋转座椅 / 空气悬架 / 电动尾翼 | ❌ |
-| 有座椅加热 / 方向盘加热 / 哨兵 / 远程拍照 / 遮阳帘 | ✅ |
-
-**L8/L9 自动支持三排**（实测 L8Air / L9Max 各生成 2 个三排实体）。
-
-### 收益
-- 新车型只需追加 JSON，**无需改代码**
-- 不再依赖 VSS 探测猜硬件
+- 从 **221** 增至 **461** 个测试
+- 新增：`test_vehicle_ability.py` / `test_device_names.py` /
+  `test_app_config.py` / `test_charge_channel.py` /
+  `test_no_hardcoded.py` / `test_freq_first_poll.py`
 
 ## [1.0.0] — 2026-09-25
 
